@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import { 
   Sun, Moon, Plus, X, AlignLeft, 
   Settings, User, ChevronRight, Clock, 
   Trash2, Pin, Edit2, MinusCircle, Bell, 
   Check, Image as ImageIcon, AlertCircle, UploadCloud, Sword, MoreVertical,
-  Copy, LogOut, Skull, ShieldPlus
+  Copy, LogOut, Skull, ShieldPlus, BarChart3, LogIn
 } from 'lucide-react';
 
 const DYNAMIC_COLORS = [
@@ -29,23 +29,35 @@ const AVATARS = [
 ];
 
 export default function App() {
-  // --- AUTH & LOCAL STORAGE ---
-  const [currentView, setCurrentView] = useState(() => {
-    return localStorage.getItem('workflow_auth') ? 'main' : 'splash';
-  });
+  // --- AUTH & INTRO STATE ---
+  const [currentView, setCurrentView] = useState('splash');
   const [introStage, setIntroStage] = useState(0); 
   const [theme, setTheme] = useState('night'); 
 
   const [userProfile, setUserProfile] = useState(() => {
     const saved = localStorage.getItem('workflow_user');
     return saved ? JSON.parse(saved) : { 
-      name: 'Task Master', 
-      email: 'user@workflow.io', 
+      name: 'Guest Explorer', 
+      email: 'Temporary session', 
       avatar: AVATARS[0], 
-      isGuest: false 
+      isGuest: true 
     };
   });
+  
   const [points, setPoints] = useState(0);
+  const [pointsHistory, setPointsHistory] = useState(() => {
+    // Generate dummy data for the graph (last 7 days)
+    const history = [];
+    const today = new Date();
+    for(let i=6; i>=0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
+      const dayNum = d.getDate();
+      history.push({ label: `${dayName} ${dayNum}`, value: Math.floor(Math.random() * 50) + 10 });
+    }
+    return history;
+  });
 
   // --- BOARDS & TASKS ---
   const [boards, setBoards] = useState([{ id: 'b1', name: 'Main Board', isPinned: true, rowCount: 5 }]);
@@ -53,9 +65,7 @@ export default function App() {
   const [boardMenuOpen, setBoardMenuOpen] = useState(null);
 
   const [tasks, setTasks] = useState([
-    { id: 't1', boardId: 'b1', title: 'Title', subtitle: 'Sub Title', description: 'Description', rowId: 1, reminder: null },
-    { id: 't2', boardId: 'b1', title: 'Title', subtitle: 'Sub Title', description: 'Description', rowId: 2, reminder: null },
-    { id: 't3', boardId: 'b1', title: 'Title', subtitle: 'Sub Title', description: 'Description', rowId: 3, reminder: null },
+    { id: 't1', boardId: 'b1', title: 'Title', subtitle: 'Sub title', description: 'Description', rowId: 1, reminder: null },
   ]);
   const [deletedTasks, setDeletedTasks] = useState([]);
 
@@ -65,6 +75,10 @@ export default function App() {
   const [editingTask, setEditingTask] = useState(null);
   const [activeModal, setActiveModal] = useState(null); 
   const [notificationBanner, setNotificationBanner] = useState('');
+  
+  // Header scroll tracking
+  const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+  const [lastScrollY, setLastScrollY] = useState(0);
 
   // --- DRAG & DROP ---
   const [draggedTaskId, setDraggedTaskId] = useState(null);
@@ -77,29 +91,45 @@ export default function App() {
   const [slashingTask, setSlashingTask] = useState(null);
   const [animatingTasks, setAnimatingTasks] = useState([]); 
   const [completedTasks, setCompletedTasks] = useState([]); 
+  const [flyingCoins, setFlyingCoins] = useState([]);
+  const angelRef = useRef(null);
 
   const activeBoard = boards.find(b => b.id === activeBoardId) || boards[0];
 
   // 1. Preload images
   useEffect(() => {
-    ['/night01.jpg', '/day01.jpg', '/moneyz.jpg', ...AVATARS].forEach((src) => {
+    ['/night01.jpg', '/day01.jpg', ...AVATARS].forEach((src) => {
       const img = new Image();
       img.src = src;
     });
   }, []);
 
-  // 2. Scroll Lock for Background when Modals/Menus are open
+  // 2. Scroll Lock for Background when Modals are open
   useEffect(() => {
     if (activeModal || editingTask || slashingTask || graveyardOpen || sidebarOpen) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = 'auto';
     }
-    
     return () => { document.body.style.overflow = 'auto'; };
   }, [activeModal, editingTask, slashingTask, graveyardOpen, sidebarOpen]);
 
-  // 3. Row Cascade Logic
+  // 3. Header Scroll Direction Logic
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      if (currentScrollY < lastScrollY) {
+        setIsHeaderVisible(false); // Hide slowly when scrolling UP
+      } else {
+        setIsHeaderVisible(true); // Show when scrolling DOWN
+      }
+      setLastScrollY(currentScrollY);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [lastScrollY]);
+
+  // 4. Row Cascade Logic
   useEffect(() => {
     if (tasks.length === 0) return;
     let tasksChanged = false;
@@ -124,13 +154,6 @@ export default function App() {
     if (tasksChanged) setTasks(newTasks);
   }, [tasks, activeBoardId, activeBoard.rowCount]);
 
-  // 4. Click outside to close board menu
-  useEffect(() => {
-    const handleGlobalClick = () => setBoardMenuOpen(null);
-    window.addEventListener('click', handleGlobalClick);
-    return () => window.removeEventListener('click', handleGlobalClick);
-  }, []);
-
   const triggerNotification = (msg) => {
     if(typeof msg !== 'string') return;
     setNotificationBanner(msg);
@@ -140,8 +163,12 @@ export default function App() {
   // --- HANDLERS ---
   const handleSplashClick = () => {
     if (introStage === 0) {
-      setIntroStage(1);
-      setTimeout(() => setIntroStage(2), 600); 
+      const isLoggedIn = localStorage.getItem('workflow_auth') === 'true';
+      if (isLoggedIn) {
+        setCurrentView('main');
+      } else {
+        setIntroStage(1);
+      }
     }
   };
 
@@ -150,7 +177,7 @@ export default function App() {
     const profile = {
       ...userProfile, 
       isGuest,
-      name: isGuest ? 'Guest Explorer' : 'Authorized User',
+      name: isGuest ? 'Guest Explorer' : 'Google User',
       email: isGuest ? 'Temporary session' : 'google.user@example.com'
     };
     setUserProfile(profile);
@@ -217,6 +244,18 @@ export default function App() {
     triggerNotification('Angel restored your card!');
   };
 
+  const spawnFlyingCoins = () => {
+    const rect = angelRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const newCoins = Array.from({ length: 5 }).map((_, i) => ({
+      id: Date.now() + i,
+      targetX: rect.left + rect.width / 2,
+      targetY: rect.top + rect.height / 2
+    }));
+    setFlyingCoins(newCoins);
+    setTimeout(() => setFlyingCoins([]), 1000);
+  };
+
   const handleCompleteTask = () => {
     if (!slashingTask) return;
     
@@ -225,12 +264,16 @@ export default function App() {
       earnedPoints = Math.max(10 - 2 * (parseInt(slashingTask.rowId) - 1), 1);
     }
     
-    setPoints(p => p + earnedPoints);
+    spawnFlyingCoins();
+    
+    setTimeout(() => {
+      setPoints(p => p + earnedPoints);
+      triggerNotification(`+${earnedPoints} Points!`);
+    }, 600); // add points when coins arrive
+
     setAnimatingTasks(prev => [...prev, slashingTask.id]);
     setCompletedTasks(prev => [{ ...slashingTask, earnedPoints, completedAt: Date.now() }, ...prev]);
-    
     setSlashingTask(null);
-    triggerNotification(`+${earnedPoints} Points!`);
 
     setTimeout(() => {
       setTasks(prev => prev.filter(t => t.id !== slashingTask.id));
@@ -241,15 +284,12 @@ export default function App() {
   const handleUndoTask = (completedTask) => {
     setPoints(p => Math.max(0, p - completedTask.earnedPoints));
     setCompletedTasks(prev => prev.filter(t => t.id !== completedTask.id));
-    
     const restoredTask = { ...completedTask };
     delete restoredTask.earnedPoints;
     delete restoredTask.completedAt;
-    
     if (typeof restoredTask.rowId === 'number' && restoredTask.rowId > activeBoard.rowCount) {
       restoredTask.rowId = activeBoard.rowCount;
     }
-    
     setTasks(prev => [...prev, restoredTask]);
     triggerNotification('Task restored to board!');
   };
@@ -259,12 +299,6 @@ export default function App() {
     e.dataTransfer.effectAllowed = 'move';
     setGrayGhostId(taskId);
     setTimeout(() => setDraggedTaskId(taskId), 10);
-  };
-
-  const handleDragStartRow = (e, rowId) => {
-    e.stopPropagation();
-    setDraggedRowId(rowId);
-    e.dataTransfer.setData('text/rowId', rowId.toString());
   };
 
   const handleDragEnd = () => {
@@ -289,7 +323,6 @@ export default function App() {
         if (taskIdx > -1) {
           const draggedTask = { ...newTasks[taskIdx], rowId: targetRowId };
           newTasks.splice(taskIdx, 1);
-          
           if (dragOverTaskId) {
             const targetIdx = newTasks.findIndex(t => t.id === dragOverTaskId);
             if (targetIdx > -1) newTasks.splice(targetIdx, 0, draggedTask);
@@ -300,18 +333,6 @@ export default function App() {
         }
         return newTasks;
       });
-    } else if (sourceRowId) {
-      const sId = parseInt(sourceRowId);
-      const tId = parseInt(targetRowId);
-      if (sId !== tId && !isNaN(sId) && !isNaN(tId)) {
-        setTasks(prev => prev.map(t => {
-          if (t.boardId === activeBoardId) {
-            if (t.rowId === sId) return { ...t, rowId: tId };
-            if (t.rowId === tId) return { ...t, rowId: sId };
-          }
-          return t;
-        }));
-      }
     }
     handleDragEnd();
   };
@@ -338,13 +359,16 @@ export default function App() {
   };
   // --- RENDERING ---
 
-  // SPLASH SCREEN (No images, solid background)
+  // SPLASH & AUTH SCREENS (Gradient Background)
   if (currentView === 'splash') {
     return (
       <div 
         onClick={handleSplashClick}
-        className="relative min-h-screen w-full flex flex-col items-center justify-center p-6 overflow-hidden select-none cursor-pointer bg-[#0c051a]"
+        className="relative min-h-screen w-full flex flex-col items-center justify-center p-6 overflow-hidden select-none cursor-pointer bg-gradient-to-br from-indigo-900 via-purple-900 to-amber-900"
       >
+        {/* Animated background overlay */}
+        <div className="absolute inset-0 opacity-30 mix-blend-overlay" style={{ backgroundImage: 'url("https://www.transparenttextures.com/patterns/stardust.png")' }}></div>
+
         <div className={`flex flex-col items-center text-center max-w-md w-full z-10 transition-all duration-1000 ease-in-out ${introStage > 0 ? '-translate-y-32' : ''}`}>
           <div className={`relative mb-6 transition-all duration-1000 ease-in-out ${introStage > 0 ? 'scale-125 translate-y-[-10px] shadow-[0_0_100px_rgba(251,191,36,0.8)]' : 'shadow-[0_10px_35px_rgba(251,191,36,0.4)] animate-bounce'} w-28 h-28 rounded-3xl bg-gradient-to-tr from-amber-300 to-yellow-100 flex items-center justify-center border-4 border-amber-200`}>
             <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-amber-800 drop-shadow">
@@ -364,11 +388,8 @@ export default function App() {
             </p>
           )}
 
-          <div className={`w-full space-y-6 px-2 absolute top-1/2 left-1/2 -translate-x-1/2 transition-all duration-1000 ${introStage === 2 ? 'opacity-100 translate-y-32' : 'opacity-0 translate-y-48 pointer-events-none'}`}>
-            <button
-              onClick={(e) => handleEnterApp(e, false)}
-              className="w-full py-4 px-6 rounded-2xl bg-white text-stone-900 font-bold text-base shadow-xl hover:bg-gray-100 active:scale-95 transition-all flex items-center justify-center gap-3"
-            >
+          <div className={`w-full space-y-6 px-2 absolute top-1/2 left-1/2 -translate-x-1/2 transition-all duration-1000 ${introStage > 0 ? 'opacity-100 translate-y-32' : 'opacity-0 translate-y-48 pointer-events-none'}`}>
+            <button onClick={(e) => handleEnterApp(e, false)} className="w-full py-4 px-6 rounded-2xl bg-white text-stone-900 font-bold text-base shadow-xl hover:bg-gray-100 active:scale-95 transition-all flex items-center justify-center gap-3">
               <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                 <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -378,35 +399,31 @@ export default function App() {
               <span>Continue with Google</span>
             </button>
 
-            <button
-              onClick={(e) => handleEnterApp(e, true)}
-              className="w-full mt-4 py-4 px-6 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold text-sm backdrop-blur-md active:scale-95 transition-all flex items-center justify-center gap-2"
-            >
+            <button onClick={(e) => handleEnterApp(e, true)} className="w-full mt-4 py-4 px-6 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold text-sm backdrop-blur-md active:scale-95 transition-all flex items-center justify-center gap-2">
               <User size={18} />
               <span>Enter as Guest</span>
             </button>
+
+            <div className="flex flex-col items-center justify-center gap-1.5 text-[11px] text-amber-100/70 pt-3 leading-relaxed text-center px-4">
+              <span className="flex items-center gap-1 font-bold text-amber-300"><AlertCircle size={12} /> Privacy Warning</span>
+              <span>Guest mode runs entirely in this browser. If you clear your history or lose this device, your tasks and progress will vanish permanently.</span>
+            </div>
           </div>
         </div>
       </div>
     );
   }
 
-  // MAIN VIEW
+  // MAIN APP VIEW
   return (
     <div className={`relative min-h-screen w-full flex overflow-x-hidden ${theme === 'night' ? 'text-slate-100' : 'text-stone-900'} transition-colors duration-500 font-sans`}>
       
-      {/* Smooth Cross-Fading Background Layers */}
+      {/* Background Layers */}
       <div className="fixed inset-0 w-screen h-screen pointer-events-none z-0 overflow-hidden">
-        <div 
-          className={`absolute inset-0 bg-cover bg-center transition-opacity duration-700 ease-in-out ${theme === 'night' ? 'opacity-100' : 'opacity-0'}`}
-          style={{ backgroundImage: `url('/night01.jpg')` }}
-        >
+        <div className={`absolute inset-0 bg-cover bg-center transition-opacity duration-700 ease-in-out ${theme === 'night' ? 'opacity-100' : 'opacity-0'}`} style={{ backgroundImage: `url('/night01.jpg')` }}>
           <div className="absolute inset-0 bg-black/40" />
         </div>
-        <div 
-          className={`absolute inset-0 bg-cover bg-center transition-opacity duration-700 ease-in-out ${theme === 'day' ? 'opacity-100' : 'opacity-0'}`}
-          style={{ backgroundImage: `url('/day01.jpg')` }}
-        >
+        <div className={`absolute inset-0 bg-cover bg-center transition-opacity duration-700 ease-in-out ${theme === 'day' ? 'opacity-100' : 'opacity-0'}`} style={{ backgroundImage: `url('/day01.jpg')` }}>
           <div className="absolute inset-0 bg-white/10" />
         </div>
       </div>
@@ -416,12 +433,22 @@ export default function App() {
         @keyframes split-bottom { 0% { transform: translateY(0) rotate(0); opacity: 1; } 100% { transform: translateY(40px) rotate(15deg); opacity: 0; } }
         .anim-split-top { animation: split-top 0.6s ease-out forwards; clip-path: polygon(0 0, 100% 0, 100% 50%, 0 45%); }
         .anim-split-bottom { animation: split-bottom 0.6s ease-out forwards; clip-path: polygon(0 45%, 100% 50%, 100% 100%, 0 100%); }
-        
-        @keyframes shimmer { 0% { filter: brightness(1) drop-shadow(0 0 15px rgba(251,191,36,0.3)); } 50% { filter: brightness(1.4) drop-shadow(0 0 40px rgba(251,191,36,0.8)); transform: scale(1.02); } 100% { filter: brightness(1) drop-shadow(0 0 15px rgba(251,191,36,0.3)); } }
-        .gold-shimmer { animation: shimmer 4s infinite ease-in-out; }
-        
         .broken-bottom { clip-path: polygon(0 0, 100% 0, 100% 90%, 95% 100%, 85% 90%, 75% 100%, 65% 90%, 55% 100%, 45% 90%, 35% 100%, 25% 90%, 15% 100%, 5% 90%, 0 100%); }
+        
+        @keyframes fly-to-angel {
+          0% { transform: translate(-50%, -50%) scale(1); opacity: 1; left: 50vw; top: 50vh; }
+          100% { transform: translate(-50%, -50%) scale(0.3); opacity: 0; left: var(--tx); top: var(--ty); }
+        }
+        .coin-anim { animation: fly-to-angel 0.6s cubic-bezier(0.25, 1, 0.5, 1) forwards; }
       `}} />
+
+      {/* Flying Coins Animation */}
+      {flyingCoins.map((coin, index) => (
+        <div key={coin.id} className="fixed z-[100] coin-anim w-8 h-8 rounded-full bg-gradient-to-br from-yellow-300 to-yellow-600 flex items-center justify-center border-2 border-yellow-100 shadow-[0_0_20px_rgba(251,191,36,0.8)]"
+             style={{ '--tx': `${coin.targetX}px`, '--ty': `${coin.targetY}px`, animationDelay: `${index * 0.05}s` }}>
+          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2.5" fill="none" className="text-yellow-900"><path d="M7 6l2 3 3-4 3 4 2-3v4H7z" fill="currentColor"/></svg>
+        </div>
+      ))}
 
       {notificationBanner && (
         <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 bg-slate-900/90 text-white px-5 py-2.5 rounded-full shadow-2xl backdrop-blur-md border border-white/20 text-xs sm:text-sm font-medium flex items-center gap-2 animate-bounce">
@@ -431,9 +458,9 @@ export default function App() {
       )}
 
       {/* SIDEBAR */}
-      <div className={`fixed inset-0 bg-black/50 backdrop-blur-xs z-30 transition-opacity duration-300 ${sidebarOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`} onClick={() => setSidebarOpen(false)} />
+      <div className={`fixed inset-0 bg-black/50 backdrop-blur-xs z-50 transition-opacity duration-300 ${sidebarOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`} onClick={() => setSidebarOpen(false)} />
 
-      <aside className={`fixed left-0 top-0 bottom-0 w-72 max-w-[85vw] ${theme === 'night' ? 'bg-[#0f1429] border-slate-800 text-slate-100' : 'bg-white/90 backdrop-blur-xl border-stone-200 text-stone-900'} border-r z-40 transform transition-transform duration-300 flex flex-col shadow-2xl ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed left-0 top-0 bottom-0 w-72 max-w-[85vw] ${theme === 'night' ? 'bg-[#0f1429] border-slate-800 text-slate-100' : 'bg-white/90 backdrop-blur-xl border-stone-200 text-stone-900'} border-r z-50 transform transition-transform duration-300 flex flex-col shadow-2xl ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-5 border-b border-inherit flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img src={userProfile.avatar} alt="Avatar" className="w-10 h-10 rounded-full object-cover ring-2 ring-amber-400 cursor-pointer" onClick={() => setActiveModal('account')} />
@@ -481,48 +508,56 @@ export default function App() {
           </div>
         </div>
         
-        {/* Sign Out Button in Sidebar */}
-        <div className="p-4 border-t border-inherit">
+        {/* Sign Out / Sign In Buttons in Sidebar */}
+        <div className="p-4 border-t border-inherit space-y-2">
+           {userProfile.isGuest && (
+             <button onClick={() => { handleSignOut(); }} className="w-full flex items-center justify-center gap-3 px-3 py-3 rounded-xl text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors text-sm font-bold">
+               <LogIn size={18} /> <span>Sign In / Up</span>
+             </button>
+           )}
            <button onClick={handleSignOut} className="w-full flex items-center justify-center gap-3 px-3 py-3 rounded-xl text-rose-500 bg-rose-500/10 hover:bg-rose-500/20 transition-colors text-sm font-bold">
-             <LogOut size={18} /> <span>Sign Out</span>
+             <LogOut size={18} /> <span>{userProfile.isGuest ? 'Exit Guest Mode' : 'Sign Out'}</span>
            </button>
         </div>
       </aside>
 
-      {/* HEADER & MAIN LEADERBOARD */}
-      <div className="relative z-10 flex-1 flex flex-col min-h-screen">
-        <header className="sticky top-0 z-20 px-4 sm:px-6 py-3 flex items-center justify-between backdrop-blur-sm">
-          <div className="flex items-center gap-3">
-            <button onClick={() => setSidebarOpen(true)} className={`p-2 rounded-xl active:scale-95 transition-all ${theme === 'night' ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-black/5 hover:bg-black/10 text-stone-900'}`}>
-              <AlignLeft size={22} />
-            </button>
-            <div className="flex items-center gap-2 bg-amber-500/10 px-3 py-1.5 rounded-full border border-amber-500/20 backdrop-blur-md shadow-sm">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-amber-500">
-                 <path d="M7 6l2 3 3-4 3 4 2-3v4H7z" fill="currentColor"/>
-              </svg>
-              <span className="font-black text-amber-500 text-sm tracking-wide">{points} pts</span>
-            </div>
-          </div>
+      {/* HEADER (Sticky & Scroll Responsive) */}
+      <header className={`fixed top-0 w-full z-30 px-4 sm:px-6 py-3 flex items-center justify-between backdrop-blur-md bg-black/10 transition-transform duration-500 ease-in-out ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}>
+        <div className="flex items-center gap-3">
+          <button onClick={() => setSidebarOpen(true)} className={`p-2 rounded-xl active:scale-95 transition-all ${theme === 'night' ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-black/10 hover:bg-black/20 text-stone-900'}`}>
+            <AlignLeft size={22} />
+          </button>
+          {/* Graph Trigger */}
+          <button onClick={() => setActiveModal('graph')} className="flex items-center gap-2 bg-gradient-to-r from-amber-500/20 to-orange-500/20 px-3 py-1.5 rounded-full border border-amber-500/30 backdrop-blur-md shadow-sm hover:scale-105 transition-transform cursor-pointer">
+            <BarChart3 size={16} className="text-amber-400" />
+            <span className="font-black text-amber-500 text-sm tracking-wide">{points} pts</span>
+          </button>
+        </div>
 
-          <div className="flex items-center gap-3">
-            <button onClick={() => setGraveyardOpen(true)} className={`p-2.5 rounded-xl border transition-colors shadow-md ${theme === 'night' ? 'bg-slate-900/80 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white' : 'bg-white/80 border-stone-300 text-stone-600 hover:bg-white hover:text-stone-900'}`}>
-               <Skull size={20} />
-            </button>
+        <div className="flex items-center gap-3">
+          <button onClick={() => setGraveyardOpen(true)} className={`p-2.5 rounded-xl border transition-colors shadow-md ${theme === 'night' ? 'bg-slate-900/80 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white' : 'bg-white/80 border-stone-300 text-stone-600 hover:bg-white hover:text-stone-900'}`}>
+             <Skull size={20} />
+          </button>
 
-            {/* HORIZONTAL ADD BUTTON */}
-            <button onClick={handleCreateTask} className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-rose-400 hover:from-amber-300 hover:to-rose-300 text-white shadow-lg active:scale-95 transition-all flex items-center gap-2 border-2 border-white/20 font-black text-sm">
-              <Plus size={18} strokeWidth={3} />
-              <span>Add Card</span>
-            </button>
-          </div>
-        </header>
+          {/* HORIZONTAL ADD BUTTON */}
+          <button onClick={handleCreateTask} className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-rose-400 hover:from-amber-300 hover:to-rose-300 text-white shadow-lg active:scale-95 transition-all flex items-center gap-2 border-2 border-white/20 font-black text-sm">
+            <Plus size={18} strokeWidth={3} />
+            <span className="hidden sm:inline">Add Card</span>
+          </button>
+        </div>
+      </header>
 
+      {/* MAIN LEADERBOARD BODY */}
+      {/* pr-28 ensures tasks don't get hidden under the persistent right-side bin */}
+      <div className="relative z-10 flex-1 flex flex-col min-h-screen pt-20 pr-20 sm:pr-28">
         <main className="flex-1 w-full max-w-5xl mx-auto px-3 sm:px-6 py-4 pb-36 relative">
           <div className="flex items-start gap-3 sm:gap-6 relative">
             
-            {/* SPINE */}
+            {/* CENTRAL LEADERBOARD SPINE & ANGEL */}
             <div className="flex flex-col items-center shrink-0 select-none relative z-10 pt-2">
+              {/* Angel Trigger Ref */}
               <div 
+                ref={angelRef}
                 onClick={() => setActiveModal('treasure')}
                 className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-tr from-amber-400 to-yellow-200 flex items-center justify-center shadow-[0_4px_20px_rgba(245,158,11,0.5)] border-2 border-yellow-100 z-10 relative cursor-pointer hover:scale-110 active:scale-95 transition-all"
               >
@@ -546,7 +581,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* ROWS */}
+            {/* TASK ROWS */}
             <div className="flex-1 flex flex-col pt-12 space-y-1">
               {Array.from({ length: activeBoard.rowCount }).map((_, idx) => {
                 const rowId = idx + 1;
@@ -616,19 +651,18 @@ export default function App() {
         </main>
       </div>
 
-      {/* LEFT-SIDE TRASH ZONE (Moved from bottom to left) */}
-      {draggedTaskId && (
-        <div 
-          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsHoveringTrash(true); }}
-          onDragLeave={() => setIsHoveringTrash(false)}
-          onDrop={(e) => { e.preventDefault(); handleDeleteTask(draggedTaskId); handleDragEnd(); }}
-          className="fixed top-0 left-0 w-32 h-full z-50 flex items-center justify-center transition-all bg-gradient-to-r from-rose-500/20 to-transparent"
-        >
-          <div className={`w-20 h-20 rounded-full flex items-center justify-center text-white transition-all duration-300 shadow-[0_0_40px_rgba(244,63,94,0.6)] ${isHoveringTrash ? 'bg-rose-600 scale-125' : 'bg-rose-500/80 scale-100'}`}>
-            <Trash2 size={isHoveringTrash ? 32 : 24} className="transition-all" />
-          </div>
+      {/* PERMANENT RIGHT-SIDE TRASH ZONE */}
+      <div 
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsHoveringTrash(true); }}
+        onDragLeave={() => setIsHoveringTrash(false)}
+        onDrop={(e) => { e.preventDefault(); if(draggedTaskId) handleDeleteTask(draggedTaskId); handleDragEnd(); }}
+        className={`fixed right-0 top-0 w-20 sm:w-28 h-full z-20 flex flex-col items-center justify-center transition-all border-l border-white/10 ${isHoveringTrash ? 'bg-rose-600/40 backdrop-blur-md' : 'bg-black/20 backdrop-blur-sm hover:bg-black/30'}`}
+      >
+        <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300 ${isHoveringTrash ? 'bg-rose-500 text-white scale-125 shadow-[0_0_30px_rgba(244,63,94,0.8)]' : 'bg-transparent text-white/30 border-2 border-white/20'}`}>
+          <Trash2 size={isHoveringTrash ? 28 : 24} className={isHoveringTrash ? 'animate-pulse' : ''} />
         </div>
-      )}
+        <span className="uppercase text-[10px] font-black tracking-widest text-white/30 mt-4 rotate-90 sm:rotate-0 sm:mt-6 text-center">Drop<br className="hidden sm:block"/>to Bin</span>
+      </div>
 
       {/* GRAVEYARD PANEL */}
       <div className={`fixed inset-0 bg-black/60 backdrop-blur-sm z-50 transition-opacity duration-300 ${graveyardOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`} onClick={() => setGraveyardOpen(false)} />
@@ -808,79 +842,65 @@ export default function App() {
         </div>
       )}
 
-      {/* SHINING GOLD ROOM MODAL */}
+      {/* GRAPH MODAL (Points History) */}
+      {activeModal === 'graph' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setActiveModal(null)} />
+          <div className="relative w-full max-w-2xl h-[70vh] flex flex-col rounded-[2.5rem] shadow-[0_0_100px_rgba(251,191,36,0.5)] overflow-hidden bg-gradient-to-br from-yellow-300 via-amber-500 to-orange-600 border-4 border-amber-200 animate-in zoom-in-95 duration-300">
+            
+            <div className="flex justify-between items-center p-6 border-b border-white/20 bg-black/20 backdrop-blur-md z-20">
+              <h3 className="font-black text-2xl text-white flex items-center gap-3 drop-shadow-md">
+                <BarChart3 size={28} />
+                Coins Collected
+              </h3>
+              <button onClick={() => setActiveModal(null)} className="p-2.5 rounded-full hover:bg-white/20 text-white transition-colors"><X size={24} strokeWidth={3} /></button>
+            </div>
+
+            <div className="flex-1 p-6 z-20 flex items-end justify-between gap-2 overflow-x-auto">
+               {pointsHistory.map((day, idx) => {
+                 const maxVal = Math.max(...pointsHistory.map(d => d.value));
+                 const heightPercent = maxVal === 0 ? 0 : (day.value / maxVal) * 100;
+                 return (
+                   <div key={idx} className="flex flex-col items-center justify-end h-full flex-1 min-w-[50px] group">
+                      <span className="font-black text-white text-lg mb-2 opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md">{day.value}</span>
+                      <div className="w-full max-w-[40px] bg-white/40 rounded-t-xl hover:bg-white/60 transition-all border-t-2 border-l-2 border-r-2 border-white/50" style={{ height: `${heightPercent}%` }}></div>
+                      <span className="text-[10px] font-bold text-white uppercase tracking-wider mt-4 whitespace-nowrap opacity-80">{day.label}</span>
+                   </div>
+                 );
+               })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PLAIN LIST COMPLETED TASKS (Angel Modal) */}
       {activeModal === 'treasure' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setActiveModal(null)} />
-          <div className={`relative w-full max-w-2xl h-[85vh] flex flex-col rounded-[2.5rem] shadow-[0_0_100px_rgba(251,191,36,0.4)] overflow-hidden ${theme === 'night' ? 'bg-[#1a1040] border-amber-400/50' : 'bg-gradient-to-b from-amber-50 to-orange-100 border-amber-400'} border-4 animate-in zoom-in-95 duration-300`}>
+          <div className={`relative w-full max-w-md max-h-[85vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden ${theme === 'night' ? 'bg-[#1a1040] border-amber-500/20 text-white' : 'bg-white border-amber-200 text-stone-900'} border animate-in zoom-in-95 duration-300`}>
             
-            <div className="flex justify-between items-center p-6 border-b border-amber-500/20 bg-black/40 backdrop-blur-sm z-20">
-              <h3 className="font-black text-2xl text-amber-400 flex items-center gap-3 drop-shadow-[0_0_15px_rgba(251,191,36,0.6)]">
-                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-amber-400 drop-shadow"><path d="M7 6l2 3 3-4 3 4 2-3v4H7z" fill="currentColor"/><circle cx="12" cy="12" r="3" /><path d="M8 21v-3a4 4 0 0 1 8 0v3" /></svg>
-                Treasure Vault
+            <div className={`flex justify-between items-center p-6 border-b ${theme === 'night' ? 'border-amber-500/20 bg-black/20' : 'border-amber-500/10 bg-amber-50/50'}`}>
+              <h3 className="font-black text-xl text-amber-500 flex items-center gap-2">
+                <Sword size={24} />
+                Completed Quests
               </h3>
-              <button onClick={() => setActiveModal(null)} className="p-2.5 rounded-full hover:bg-black/20 text-amber-500 transition-colors"><X size={24} strokeWidth={3} /></button>
+              <button onClick={() => setActiveModal(null)} className="p-2 rounded-full hover:bg-black/10 transition-colors"><X size={20} /></button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 z-20">
-               <div className={`rounded-3xl p-5 min-h-full shadow-inner flex flex-col border border-amber-500/20 ${theme === 'night' ? 'bg-black/40' : 'bg-white/40'}`}>
-                 <h4 className={`font-extrabold uppercase tracking-widest text-xs mb-5 text-center ${theme === 'night' ? 'text-amber-500/70' : 'text-amber-700/70'}`}>Quest History</h4>
-                 
-                 {completedTasks.length === 0 ? (
-                   <div className={`flex-1 flex flex-col items-center justify-center opacity-50 ${theme === 'night' ? 'text-amber-100' : 'text-amber-900'}`}>
-                      <Sword size={48} className="mb-4 opacity-50" />
-                      <p className="font-bold">No completed quests yet.</p>
-                   </div>
-                 ) : (
-                   <div className="space-y-3">
-                     {completedTasks.map((ct, idx) => (
-                       <div key={idx} className={`flex items-center justify-between p-4 rounded-2xl border ${theme === 'night' ? 'bg-amber-900/30 border-amber-500/20' : 'bg-amber-500/10 border-amber-500/30'}`}>
-                          <div>
-                             <h5 className={`font-black text-sm ${theme === 'night' ? 'text-amber-50' : 'text-amber-950'}`}>{ct.title || 'Untitled Task'}</h5>
-                             <p className={`text-xs font-semibold mt-0.5 ${theme === 'night' ? 'text-amber-200/70' : 'text-amber-800/80'}`}>{ct.subtitle}</p>
-                          </div>
-                          <div className="flex items-center gap-4">
-                            <div className="flex items-center gap-2 text-amber-500 font-black text-lg">
-                               <span>+{ct.earnedPoints}</span>
-                               <div className="w-6 h-6 rounded-full bg-gradient-to-br from-yellow-300 to-yellow-600 flex items-center justify-center border-2 border-yellow-200 shadow-sm">
-                                 <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" strokeWidth="2.5" fill="none" className="text-yellow-900"><path d="M7 6l2 3 3-4 3 4 2-3v4H7z" fill="currentColor"/></svg>
-                               </div>
-                            </div>
-                            
-                            <button onClick={() => handleUndoTask(ct)} className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl transition-all group" title="Undo Task">
-                               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:rotate-12 transition-transform">
-                                 <path d="M22 2L15 9" />
-                                 <path d="M11 13L2 22" />
-                                 <path d="M20 9L15 4" />
-                                 <path d="M9 20L4 15" />
-                                 <line x1="10" y1="14" x2="14" y2="10" strokeDasharray="2 2" />
-                               </svg>
-                            </button>
-                          </div>
-                       </div>
-                     ))}
-                   </div>
-                 )}
-               </div>
-            </div>
-
-            {/* Custom moneyz.jpg Vault Asset with Shimmer Animation */}
-            <div className="h-64 relative z-10 mt-auto flex items-end justify-center overflow-hidden border-t border-amber-500/30">
-              <div 
-                className="absolute inset-0 bg-cover bg-center brightness-110 gold-shimmer"
-                style={{ backgroundImage: `url('/moneyz.jpg')` }}
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent"></div>
-
-              <div className="relative z-30 mb-8 flex flex-col items-center bg-black/80 px-8 py-4 rounded-full backdrop-blur-md border border-amber-500/30 shadow-[0_0_30px_rgba(251,191,36,0.6)]">
-                 <div className="text-5xl font-black text-white drop-shadow-[0_2px_15px_rgba(251,191,36,0.8)] flex items-center gap-3">
-                   {points} 
-                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-yellow-300 to-yellow-600 flex items-center justify-center border-2 border-yellow-100 shadow-[0_0_20px_rgba(251,191,36,0.8)]">
-                     <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" strokeWidth="2.5" fill="none" className="text-yellow-900"><path d="M7 6l2 3 3-4 3 4 2-3v4H7z" fill="currentColor"/></svg>
-                   </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-3">
+               {completedTasks.length === 0 ? (
+                 <div className="flex flex-col items-center justify-center opacity-50 py-10">
+                    <Sword size={48} className="mb-4 opacity-50" />
+                    <p className="font-bold">No completed quests yet.</p>
                  </div>
-                 <span className="text-amber-300 font-extrabold tracking-widest uppercase text-[10px] mt-2 drop-shadow-md">Total Wealth</span>
-              </div>
+               ) : (
+                 completedTasks.map((ct, idx) => (
+                   <div key={idx} className={`flex flex-col p-4 rounded-2xl border ${theme === 'night' ? 'bg-black/20 border-slate-700/50' : 'bg-black/5 border-stone-200'}`}>
+                      <h5 className="font-black text-sm">{ct.title || 'Untitled Task'}</h5>
+                      <p className="text-xs font-medium opacity-70 mt-1">{ct.subtitle}</p>
+                   </div>
+                 ))
+               )}
             </div>
           </div>
         </div>

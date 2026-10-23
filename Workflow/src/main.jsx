@@ -65,7 +65,12 @@ export default function App() {
   const [animatingTasks, setAnimatingTasks] = useState([]); 
   const [completedTasks, setCompletedTasks] = useState([]); 
 
-  const activeBoard = boards.find(b => b.id === activeBoardId) || boards[0];
+  useEffect(() => {
+      ['/night01.jpg', '/day01.jpg', '/moneyz.jpg'].forEach((src) => {
+        const img = new Image();
+        img.src = src;
+      });
+    }, []);
 
   useEffect(() => {
     if (tasks.length === 0) return;
@@ -345,13 +350,13 @@ export default function App() {
   return (
     <div className={`relative min-h-screen w-full flex overflow-x-hidden ${theme === 'night' ? 'text-slate-100' : 'text-stone-900'} transition-colors duration-500 font-sans`}>
       
-      {/* Background with custom images */}
-      <div 
-        className="fixed w-screen h-screen top-0 left-0 pointer-events-none z-0 bg-cover bg-center transition-all duration-700"
-        style={{ backgroundImage: `url('${theme === 'night' ? '/night01.jpg' : '/day01.jpg'}')` }}
-      >
-        <div className={`absolute inset-0 ${theme === 'night' ? 'bg-black/40' : 'bg-white/10'}`}></div>
-      </div>
+      {/* Preload images on mount */}
+          useEffect(() => {
+            ['/night01.jpg', '/day01.jpg', '/moneyz.jpg'].forEach((src) => {
+              const img = new Image();
+              img.src = src;
+            });
+          }, []);
 
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes split-top {

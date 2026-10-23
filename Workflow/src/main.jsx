@@ -7,7 +7,6 @@ import {
   Check, Image as ImageIcon, AlertCircle, UploadCloud, Sword, MoreVertical
 } from 'lucide-react';
 
-// True Color Grading Engine Base HSL Values
 const DYNAMIC_COLORS = [
   { hue: 45, sat: 100, baseL: 55, text: 'text-amber-950' },   // Row 1: Yellows
   { hue: 25, sat: 100, baseL: 55, text: 'text-white' },       // Row 2: Oranges
@@ -21,50 +20,53 @@ const DYNAMIC_COLORS = [
 
 const FORGOTTEN_COLOR = { hue: 215, sat: 15, baseL: 40, text: 'text-slate-100' };
 
-const DEFAULT_AVATAR = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80';
+const AVATARS = [
+  '/pfp1.jpeg',
+  '/pfp2.jpeg',
+  '/pfp3.jpeg',
+  '/pfp4.jpeg'
+];
 
 export default function App() {
   const [currentView, setCurrentView] = useState('splash');
   const [introStage, setIntroStage] = useState(0); 
   const [theme, setTheme] = useState('night'); 
 
-  // User & Points
-  const [userProfile, setUserProfile] = useState({ name: 'Task Master', email: 'user@workflow.io', avatar: DEFAULT_AVATAR, isGuest: false });
+  const [userProfile, setUserProfile] = useState({ 
+    name: 'Task Master', 
+    email: 'user@workflow.io', 
+    avatar: AVATARS[0], 
+    isGuest: false 
+  });
   const [points, setPoints] = useState(0);
 
-  // App Data
   const [boards, setBoards] = useState([{ id: 'b1', name: 'Main Board', isPinned: true, rowCount: 5 }]);
   const [activeBoardId, setActiveBoardId] = useState('b1');
   const [boardMenuOpen, setBoardMenuOpen] = useState(null);
 
-  // Default clean tasks
   const [tasks, setTasks] = useState([
     { id: 't1', boardId: 'b1', title: 'Title', subtitle: 'Sub Title', description: 'Description', rowId: 1, reminder: null },
     { id: 't2', boardId: 'b1', title: 'Title', subtitle: 'Sub Title', description: 'Description', rowId: 2, reminder: null },
     { id: 't3', boardId: 'b1', title: 'Title', subtitle: 'Sub Title', description: 'Description', rowId: 3, reminder: null },
   ]);
 
-  // UI state
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [activeModal, setActiveModal] = useState(null); 
   const [notificationBanner, setNotificationBanner] = useState('');
 
-  // Drag State
   const [draggedTaskId, setDraggedTaskId] = useState(null);
   const [grayGhostId, setGrayGhostId] = useState(null); 
   const [dragOverTaskId, setDragOverTaskId] = useState(null); 
   const [draggedRowId, setDraggedRowId] = useState(null);
   const [isHoveringTrash, setIsHoveringTrash] = useState(false);
   
-  // Slashing State
   const [slashingTask, setSlashingTask] = useState(null);
   const [animatingTasks, setAnimatingTasks] = useState([]); 
   const [completedTasks, setCompletedTasks] = useState([]); 
 
   const activeBoard = boards.find(b => b.id === activeBoardId) || boards[0];
 
-  // Auto-shift empty rows up
   useEffect(() => {
     if (tasks.length === 0) return;
     let tasksChanged = false;
@@ -89,7 +91,6 @@ export default function App() {
     if (tasksChanged) setTasks(newTasks);
   }, [tasks, activeBoardId, activeBoard.rowCount]);
 
-  // Close menus when clicking outside
   useEffect(() => {
     const handleGlobalClick = () => setBoardMenuOpen(null);
     window.addEventListener('click', handleGlobalClick);
@@ -158,8 +159,6 @@ export default function App() {
     
     setPoints(p => p + earnedPoints);
     setAnimatingTasks(prev => [...prev, slashingTask.id]);
-    
-    // Save to completed history
     setCompletedTasks(prev => [{ ...slashingTask, earnedPoints, completedAt: Date.now() }, ...prev]);
     
     setSlashingTask(null);
@@ -278,25 +277,22 @@ export default function App() {
     }
   };
 
-  // -------------------------------------------------------------
-  // VIEW: SPLASH / WELCOME SCREEN
-  // -------------------------------------------------------------
+  // SPLASH SCREEN
   if (currentView === 'splash') {
     return (
       <div 
         onClick={handleSplashClick}
         className="relative min-h-screen w-full flex flex-col items-center justify-center p-6 overflow-hidden select-none cursor-pointer bg-[#1a1040]"
       >
-        <div className="fixed w-screen h-screen top-0 left-0 bg-gradient-to-br from-[#12082b] via-[#1a1040] to-[#070b1f] pointer-events-none">
-          <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_20%_30%,_#3b185f_0%,_transparent_40%)] opacity-70"></div>
-          <div className="absolute bottom-0 right-0 w-full h-full bg-[radial-gradient(circle_at_80%_70%,_#1f144a_0%,_transparent_50%)] opacity-80"></div>
-          <div className="absolute top-1/2 left-1/2 w-[800px] h-[800px] bg-purple-900/10 rounded-full blur-[120px] mix-blend-screen -translate-x-1/2 -translate-y-1/2"></div>
+        <div 
+          className="fixed w-screen h-screen top-0 left-0 bg-cover bg-center pointer-events-none"
+          style={{ backgroundImage: `url('/night01.jpg')` }}
+        >
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-xs"></div>
         </div>
 
         <div className={`flex flex-col items-center text-center max-w-md w-full z-10 transition-all duration-1000 ease-in-out ${introStage > 0 ? '-translate-y-32' : ''}`}>
-          
           <div className={`relative mb-6 transition-all duration-1000 ease-in-out ${introStage > 0 ? 'scale-125 translate-y-[-10px] shadow-[0_0_100px_rgba(251,191,36,0.8)]' : 'shadow-[0_10px_35px_rgba(251,191,36,0.4)] animate-bounce'} w-28 h-28 rounded-3xl bg-gradient-to-tr from-amber-300 to-yellow-100 flex items-center justify-center border-4 border-amber-200`}>
-            {/* Custom Angel with Crown Logo */}
             <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-amber-800 drop-shadow">
               <path d="M7 6l2 3 3-4 3 4 2-3v4H7z" fill="currentColor"/>
               <circle cx="12" cy="12" r="3" />
@@ -314,7 +310,6 @@ export default function App() {
             </p>
           )}
 
-          {/* Buttons Area */}
           <div className={`w-full space-y-6 px-2 absolute top-1/2 left-1/2 -translate-x-1/2 transition-all duration-1000 ${introStage === 2 ? 'opacity-100 translate-y-32' : 'opacity-0 translate-y-48 pointer-events-none'}`}>
             <button
               onClick={(e) => handleEnterApp(e, false)}
@@ -346,26 +341,16 @@ export default function App() {
     );
   }
 
-  // -------------------------------------------------------------
-  // VIEW: MAIN APPLICATION
-  // -------------------------------------------------------------
+  // MAIN VIEW
   return (
     <div className={`relative min-h-screen w-full flex overflow-x-hidden ${theme === 'night' ? 'text-slate-100' : 'text-stone-900'} transition-colors duration-500 font-sans`}>
       
-      {/* Dynamic Backgrounds (Locked to viewport using w-screen h-screen fixed) */}
-      <div className="fixed w-screen h-screen top-0 left-0 pointer-events-none z-0 overflow-hidden transition-colors duration-700">
-        {theme === 'night' ? (
-          <div className="absolute inset-0 bg-gradient-to-br from-[#0c051a] via-[#16123a] to-[#26104e]">
-             <div className="absolute top-0 left-1/4 w-full h-[600px] bg-purple-700/20 rounded-full blur-[150px] mix-blend-screen transform -rotate-12"></div>
-             <div className="absolute bottom-1/4 right-0 w-[800px] h-[800px] bg-blue-700/10 rounded-full blur-[150px] mix-blend-screen"></div>
-          </div>
-        ) : (
-          <div className="absolute inset-0 bg-gradient-to-b from-[#a1c4fd] via-[#ffc3a0] to-[#ffafbd]">
-            <div className="absolute top-0 left-0 w-full h-[50vh] bg-gradient-to-b from-white/40 to-transparent"></div>
-            <div className="absolute top-1/4 left-0 w-full h-[300px] bg-orange-300/30 rounded-full blur-[100px]"></div>
-            <div className="absolute bottom-0 right-0 w-[600px] h-[400px] bg-pink-400/20 rounded-full blur-[120px]"></div>
-          </div>
-        )}
+      {/* Background with custom images */}
+      <div 
+        className="fixed w-screen h-screen top-0 left-0 pointer-events-none z-0 bg-cover bg-center transition-all duration-700"
+        style={{ backgroundImage: `url('${theme === 'night' ? '/night01.jpg' : '/day01.jpg'}')` }}
+      >
+        <div className={`absolute inset-0 ${theme === 'night' ? 'bg-black/40' : 'bg-white/10'}`}></div>
       </div>
 
       <style dangerouslySetInnerHTML={{__html: `
@@ -388,7 +373,7 @@ export default function App() {
         </div>
       )}
 
-      {/* SIDEBAR OVERLAY */}
+      {/* SIDEBAR */}
       <div className={`fixed inset-0 bg-black/50 backdrop-blur-xs z-30 transition-opacity duration-300 ${sidebarOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`} onClick={() => setSidebarOpen(false)} />
 
       <aside className={`fixed left-0 top-0 bottom-0 w-72 max-w-[85vw] ${theme === 'night' ? 'bg-[#0f1429] border-slate-800 text-slate-100' : 'bg-white/90 backdrop-blur-xl border-stone-200 text-stone-900'} border-r z-40 transform transition-transform duration-300 flex flex-col shadow-2xl ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
@@ -405,7 +390,7 @@ export default function App() {
 
         <div className="flex-1 overflow-y-auto p-4 space-y-1">
           <button onClick={() => { setActiveModal('account'); setSidebarOpen(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-black/5 transition-colors text-sm font-medium">
-            <User size={18} className="text-amber-500" /> <span>Profile / Gallery</span>
+            <User size={18} className="text-amber-500" /> <span>Profile / Avatars</span>
           </button>
           <button onClick={() => { setActiveModal('settings'); setSidebarOpen(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-black/5 transition-colors text-sm font-medium">
             <Settings size={18} className="text-emerald-500" /> <span>Settings</span>
@@ -446,9 +431,8 @@ export default function App() {
         </div>
       </aside>
 
-      {/* HEADER & MAIN WORKSPACE */}
+      {/* HEADER & MAIN LEADERBOARD */}
       <div className="relative z-10 flex-1 flex flex-col min-h-screen">
-        
         <header className="sticky top-0 z-20 px-4 sm:px-6 py-3 flex items-center justify-between transition-colors backdrop-blur-sm">
           <div className="flex items-center gap-3">
             <button onClick={() => setSidebarOpen(true)} className={`p-2 rounded-xl active:scale-95 transition-all ${theme === 'night' ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-black/5 hover:bg-black/10 text-stone-900'}`}>
@@ -472,7 +456,7 @@ export default function App() {
         <main className="flex-1 w-full max-w-5xl mx-auto px-3 sm:px-6 py-4 pb-36 relative">
           <div className="flex items-start gap-3 sm:gap-6 relative">
             
-            {/* VERTICAL LEADERBOARD SPINE */}
+            {/* SPINE */}
             <div className="flex flex-col items-center shrink-0 select-none relative z-10 pt-2">
               <div 
                 onClick={() => setActiveModal('treasure')}
@@ -498,7 +482,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* ROWS CONTENT */}
+            {/* ROWS */}
             <div className="flex-1 flex flex-col pt-12 space-y-1">
               {Array.from({ length: activeBoard.rowCount }).map((_, idx) => {
                 const rowId = idx + 1;
@@ -526,7 +510,6 @@ export default function App() {
                         />
                       ))}
                     </div>
-                    {/* Row Drag Handle - Grip Dots */}
                     <div draggable onDragStart={(e) => handleDragStartRow(e, rowId)} onDragEnd={handleDragEnd} className="w-8 shrink-0 flex flex-col items-center justify-center opacity-0 group-hover:opacity-40 hover:!opacity-100 cursor-grab px-2 transition-opacity">
                       <div className="flex gap-1 mb-1"><div className="w-1 h-1 rounded-full bg-current"/><div className="w-1 h-1 rounded-full bg-current"/></div>
                       <div className="flex gap-1 mb-1"><div className="w-1 h-1 rounded-full bg-current"/><div className="w-1 h-1 rounded-full bg-current"/></div>
@@ -536,7 +519,7 @@ export default function App() {
                 );
               })}
 
-              {/* NO PRIORITY SECTION */}
+              {/* NO PRIORITY */}
               <div className="mt-8 pt-4">
                 <div onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDropOnRow(e, 'forgotten')} className={`rounded-3xl p-4 sm:p-5 border-2 border-dashed transition-all ${theme === 'night' ? 'bg-slate-900/40 border-slate-600/50' : 'bg-white/40 border-stone-300/60'}`}>
                   <div className="flex items-center justify-between mb-4">
@@ -567,7 +550,7 @@ export default function App() {
         </main>
       </div>
 
-      {/* FULL-WIDTH INVISIBLE TRASH DROP ZONE */}
+      {/* TRASH ZONE */}
       {draggedTaskId && (
         <div 
           onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsHoveringTrash(true); }}
@@ -604,7 +587,7 @@ export default function App() {
         </div>
       )}
 
-      {/* HALF-SCREEN TASK DETAIL / EDIT MODAL */}
+      {/* TASK DETAIL / EDIT MODAL */}
       {editingTask && (
         <div className="fixed inset-0 z-50 flex items-center justify-center md:justify-end">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-xs transition-opacity" onClick={() => { if(!editingTask.isNew) setEditingTask(null); else handleDeleteTask(editingTask.id); }} />
@@ -662,17 +645,36 @@ export default function App() {
         </div>
       )}
 
-      {/* ACCOUNT MODAL */}
+      {/* ACCOUNT MODAL WITH AVATAR PICKER */}
       {activeModal === 'account' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-xs" onClick={() => setActiveModal(null)} />
           <div className={`relative w-full max-w-md ${theme === 'night' ? 'bg-slate-900 text-white' : 'bg-white text-stone-900'} p-6 rounded-3xl shadow-2xl border border-slate-700/50`}>
-            <div className="flex justify-between items-center mb-5"><h3 className="font-extrabold text-lg flex items-center gap-2"><ImageIcon size={20} className="text-amber-500" /> <span>Profile & Gallery</span></h3><button onClick={() => setActiveModal(null)} className="p-1 rounded-lg hover:bg-black/10"><X size={18} /></button></div>
+            <div className="flex justify-between items-center mb-5"><h3 className="font-extrabold text-lg flex items-center gap-2"><ImageIcon size={20} className="text-amber-500" /> <span>Profile & Avatars</span></h3><button onClick={() => setActiveModal(null)} className="p-1 rounded-lg hover:bg-black/10"><X size={18} /></button></div>
+            
             <div className="mb-5 flex flex-col items-center gap-4">
-              <img src={userProfile.avatar} alt="Profile" className="w-28 h-28 rounded-full object-cover ring-4 ring-amber-500 shadow-xl" />
+              <img src={userProfile.avatar} alt="Profile" className="w-24 h-24 rounded-full object-cover ring-4 ring-amber-500 shadow-xl" />
+              
+              {/* Presets */}
+              <div className="w-full">
+                <label className="text-xs uppercase font-extrabold opacity-50 mb-2 block text-center">Choose an Avatar</label>
+                <div className="flex justify-center gap-3">
+                  {AVATARS.map((av, idx) => (
+                    <img 
+                      key={idx} 
+                      src={av} 
+                      alt={`Avatar option ${idx + 1}`} 
+                      onClick={() => setUserProfile(prev => ({ ...prev, avatar: av }))}
+                      className={`w-12 h-12 rounded-full object-cover cursor-pointer hover:scale-110 transition-all border-2 ${userProfile.avatar === av ? 'ring-2 ring-amber-400 border-white' : 'border-transparent opacity-70 hover:opacity-100'}`}
+                    />
+                  ))}
+                </div>
+              </div>
+
               <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" id="avatar-upload" />
-              <label htmlFor="avatar-upload" className="cursor-pointer flex items-center gap-2 px-5 py-2.5 bg-black/10 dark:bg-white/10 rounded-xl text-sm font-semibold hover:bg-black/20 dark:hover:bg-white/20 transition-all"><UploadCloud size={18} /> Choose from Gallery</label>
+              <label htmlFor="avatar-upload" className="cursor-pointer flex items-center gap-2 px-4 py-2 bg-black/10 dark:bg-white/10 rounded-xl text-xs font-semibold hover:bg-black/20 dark:hover:bg-white/20 transition-all"><UploadCloud size={16} /> Custom Upload</label>
             </div>
+            
             <div className="mb-6"><label className="text-xs uppercase font-extrabold opacity-50 mb-1 block">Display Name</label><input type="text" value={userProfile.name} onChange={(e) => setUserProfile({ ...userProfile, name: e.target.value })} className="w-full px-4 py-2.5 rounded-xl bg-black/5 dark:bg-white/5 border border-slate-500/20 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm"/></div>
             <button onClick={() => setActiveModal(null)} className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-xl text-sm">Done</button>
           </div>
@@ -687,7 +689,7 @@ export default function App() {
             <div className="flex justify-between items-center mb-5"><h3 className="font-extrabold text-lg flex items-center gap-2"><Settings size={20} className="text-emerald-500" /> <span>Settings</span></h3><button onClick={() => setActiveModal(null)} className="p-1 rounded-lg hover:bg-black/10"><X size={18} /></button></div>
             <div className="space-y-4 mb-6">
               <div className="flex items-center justify-between p-3 rounded-2xl bg-black/5 dark:bg-white/5">
-                <div><h5 className="font-bold text-sm">Theme Mode</h5><p className="text-[11px] opacity-60">Night Nebula or Sunset Day</p></div>
+                <div><h5 className="font-bold text-sm">Theme Mode</h5><p className="text-[11px] opacity-60">Night Sky or Sunrise Cloud</p></div>
                 <button onClick={() => setTheme(t => t === 'night' ? 'day' : 'night')} className="p-2.5 rounded-xl bg-black/10 dark:bg-white/10">{theme === 'night' ? <Moon size={18} /> : <Sun size={18} />}</button>
               </div>
             </div>
@@ -752,9 +754,15 @@ export default function App() {
                </div>
             </div>
 
-            {/* Vault Pyramid of Coins */}
-            <div className="h-64 relative z-10 mt-auto flex items-end justify-center overflow-hidden pt-10 pb-6 border-t border-amber-500/20 bg-[radial-gradient(ellipse_at_bottom,_var(--tw-gradient-stops))] from-yellow-900/40 via-transparent to-transparent">
-              <div className="absolute top-4 z-30 flex flex-col items-center bg-black/50 px-8 py-3 rounded-full backdrop-blur-md border border-white/10 shadow-2xl">
+            {/* Custom moneyz.jpg Vault Asset */}
+            <div className="h-64 relative z-10 mt-auto flex items-end justify-center overflow-hidden border-t border-amber-500/20">
+              <div 
+                className="absolute inset-0 bg-cover bg-center brightness-75 transition-all"
+                style={{ backgroundImage: `url('/moneyz.jpg')` }}
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent"></div>
+
+              <div className="relative z-30 mb-8 flex flex-col items-center bg-black/60 px-8 py-3 rounded-full backdrop-blur-md border border-white/20 shadow-2xl">
                  <div className="text-5xl font-black text-white drop-shadow-[0_2px_15px_rgba(251,191,36,0.6)] flex items-center gap-3">
                    {points} 
                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-yellow-300 to-yellow-600 flex items-center justify-center border-2 border-yellow-100 shadow-[0_0_20px_rgba(251,191,36,0.5)]">
@@ -762,32 +770,6 @@ export default function App() {
                    </div>
                  </div>
                  <span className="text-amber-300 font-extrabold tracking-widest uppercase text-[10px] mt-1 drop-shadow-md">Total Wealth</span>
-              </div>
-
-              <div className="relative z-20 w-full flex justify-center items-end h-full translate-y-4">
-                {(() => {
-                  const rows = 6;
-                  const coins = [];
-                  for (let r = 0; r < rows; r++) {
-                    const coinsInRow = rows - r + 1;
-                    for (let c = 0; c < coinsInRow; c++) {
-                      const xOffset = (c - (coinsInRow - 1) / 2) * 35;
-                      const yOffset = r * -15;
-                      coins.push(
-                        <div key={`${r}-${c}`} className="absolute rounded-full bg-gradient-to-br from-amber-300 via-yellow-400 to-yellow-700 border border-yellow-200 flex items-center justify-center shadow-[0_5px_15px_rgba(0,0,0,0.8)] transition-transform hover:scale-110"
-                          style={{ 
-                            width: '45px', height: '45px',
-                            transform: `translate(${xOffset}px, ${yOffset}px) rotate(${(Math.random() - 0.5) * 40}deg)`,
-                            zIndex: r
-                          }}
-                        >
-                          <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" strokeWidth="2.5" fill="none" className="text-yellow-900/70"><path d="M7 6l2 3 3-4 3 4 2-3v4H7z" fill="currentColor"/><circle cx="12" cy="12" r="3" /><path d="M8 21v-3a4 4 0 0 1 8 0v3" /></svg>
-                        </div>
-                      );
-                    }
-                  }
-                  return coins;
-                })()}
               </div>
             </div>
           </div>
@@ -797,9 +779,7 @@ export default function App() {
   );
 }
 
-// -------------------------------------------------------------
-// SUB-COMPONENT: FULLY COLORED DRAGGABLE TASK CARD
-// -------------------------------------------------------------
+// TASK CARD
 function TaskCard({ task, colorObj, index = 0, isDragged, isGrayGhost, isDragOver, isAnimating, onClick, onSlash, onDragStart, onDragOver, onDragEnd }) {
   let bgColor, borderColor, textColor;
 
@@ -868,6 +848,8 @@ function TaskCard({ task, colorObj, index = 0, isDragged, isGrayGhost, isDragOve
     </div>
   );
 }
+
+// MOUNT TO ROOT
 const rootElement = document.getElementById('root');
 if (rootElement) {
   ReactDOM.createRoot(rootElement).render(

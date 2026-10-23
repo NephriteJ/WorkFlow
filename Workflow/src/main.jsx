@@ -30,31 +30,43 @@ const AVATARS = [
 
 export default function App() {
   // --- AUTH & INTRO STATE ---
+  // currentView can be 'splash', 'transitioning', or 'main'
   const [currentView, setCurrentView] = useState('splash');
   const [introStage, setIntroStage] = useState(0); 
   const [theme, setTheme] = useState('night'); 
 
+  // Google Auth preparation state
   const [userProfile, setUserProfile] = useState(() => {
     const saved = localStorage.getItem('workflow_user');
     return saved ? JSON.parse(saved) : { 
       name: 'Guest Explorer', 
       email: 'Temporary session', 
       avatar: AVATARS[0], 
-      isGuest: true 
+      isGuest: true,
+      googleId: null 
     };
   });
   
-  const [points, setPoints] = useState(0);
+  // --- ACTUAL CALENDAR COIN TRACKING (Starts at 0) ---
+  const [points, setPoints] = useState(() => {
+    const saved = localStorage.getItem('workflow_points');
+    return saved ? parseInt(saved) : 0;
+  });
+  
   const [pointsHistory, setPointsHistory] = useState(() => {
-    // Generate dummy data for the graph (last 7 days)
+    const saved = localStorage.getItem('workflow_history');
+    if (saved) return JSON.parse(saved);
+    
+    // Generate actual calendar for the last 7 days starting at 0
     const history = [];
     const today = new Date();
-    for(let i=6; i>=0; i--) {
+    for(let i = 6; i >= 0; i--) {
       const d = new Date(today);
       d.setDate(d.getDate() - i);
-      const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
+      const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
       const dayNum = d.getDate();
-      history.push({ label: `${dayName} ${dayNum}`, value: Math.floor(Math.random() * 50) + 10 });
+      const dateKey = d.toLocaleDateString('en-US'); // e.g., "10/23/2026"
+      history.push({ dateKey, label: `${dayName} ${dayNum}`, value: 0 });
     }
     return history;
   });
@@ -64,10 +76,22 @@ export default function App() {
   const [activeBoardId, setActiveBoardId] = useState('b1');
   const [boardMenuOpen, setBoardMenuOpen] = useState(null);
 
-  const [tasks, setTasks] = useState([
-    { id: 't1', boardId: 'b1', title: 'Title', subtitle: 'Sub title', description: 'Description', rowId: 1, reminder: null },
-  ]);
-  const [deletedTasks, setDeletedTasks] = useState([]);
+  const [tasks, setTasks] = useState(() => {
+    const saved = localStorage.getItem('workflow_tasks');
+    return saved ? JSON.parse(saved) : [
+      { id: 't1', boardId: 'b1', title: 'Title', subtitle: 'Sub title', description: 'Description', rowId: 1, reminder: null }
+    ];
+  });
+  
+  const [deletedTasks, setDeletedTasks] = useState(() => {
+    const saved = localStorage.getItem('workflow_deleted');
+    return saved ? JSON.parse(saved) : [];
+  });
+  
+  const [completedTasks, setCompletedTasks] = useState(() => {
+    const saved = localStorage.getItem('workflow_completed');
+    return saved ? JSON.parse(saved) : [];
+  });
 
   // --- UI STATE ---
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -90,21 +114,25 @@ export default function App() {
   // --- ANIMATIONS ---
   const [slashingTask, setSlashingTask] = useState(null);
   const [animatingTasks, setAnimatingTasks] = useState([]); 
-  const [completedTasks, setCompletedTasks] = useState([]); 
   const [flyingCoins, setFlyingCoins] = useState([]);
   const angelRef = useRef(null);
 
   const activeBoard = boards.find(b => b.id === activeBoardId) || boards[0];
+  // --- 1. LOCAL STORAGE SAVING ---
+  useEffect(() => { localStorage.setItem('workflow_tasks', JSON.stringify(tasks)); }, [tasks]);
+  useEffect(() => { localStorage.setItem('workflow_points', points.toString()); }, [points]);
+  useEffect(() => { localStorage.setItem('workflow_history', JSON.stringify(pointsHistory)); }, [pointsHistory]);
+  useEffect(() => { localStorage.setItem('workflow_completed', JSON.stringify(completedTasks)); }, [completedTasks]);
+  useEffect(() => { localStorage.setItem('workflow_deleted', JSON.stringify(deletedTasks)); }, [deletedTasks]);
 
-  // 1. Preload images
+  // --- 2. PRELOAD IMAGES ---
   useEffect(() => {
-    ['/night01.jpg', '/day01.jpg', ...AVATARS].forEach((src) => {
-      const img = new Image();
-      img.src = src;
+    ['/icon-512.png', '/night01.jpg', '/day01.jpg', ...AVATARS].forEach((src) => {
+      const img = new Image(); img.src = src;
     });
   }, []);
 
-  // 2. Scroll Lock for Background when Modals are open
+  // --- 3. MODAL SCROLL LOCK ---
   useEffect(() => {
     if (activeModal || editingTask || slashingTask || graveyardOpen || sidebarOpen) {
       document.body.style.overflow = 'hidden';
@@ -114,36 +142,42 @@ export default function App() {
     return () => { document.body.style.overflow = 'auto'; };
   }, [activeModal, editingTask, slashingTask, graveyardOpen, sidebarOpen]);
 
-  // 3. Header Scroll Direction Logic
+  // --- 4. HEADER SCROLL TRACKING (Fixed Boundary) ---
   useEffect(() => {
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
-      if (currentScrollY < lastScrollY) {
-        setIsHeaderVisible(false); // Hide slowly when scrolling UP
-      } else {
-        setIsHeaderVisible(true); // Show when scrolling DOWN
+      
+      // If we are at the very top of the page, ALWAYS show the header
+      if (currentScrollY <= 10) {
+        setIsHeaderVisible(true);
+      } 
+      // Scrolling down the page (sliding finger up) -> Hide header
+      else if (currentScrollY > lastScrollY) {
+        setIsHeaderVisible(false);
+      } 
+      // Scrolling up the page (sliding finger down) -> Show header
+      else {
+        setIsHeaderVisible(true);
       }
+      
       setLastScrollY(currentScrollY);
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, [lastScrollY]);
 
-  // 4. Row Cascade Logic
+  // --- 5. ROW CASCADE LOGIC ---
   useEffect(() => {
     if (tasks.length === 0) return;
     let tasksChanged = false;
     let newTasks = [...tasks];
-    
     for (let i = 1; i <= activeBoard.rowCount; i++) {
       const rowTasks = newTasks.filter(t => t.boardId === activeBoardId && t.rowId === i);
       if (rowTasks.length === 0) {
         const tasksBelow = newTasks.filter(t => t.boardId === activeBoardId && typeof t.rowId === 'number' && t.rowId > i);
         if (tasksBelow.length > 0) {
           newTasks = newTasks.map(t => {
-            if (t.boardId === activeBoardId && typeof t.rowId === 'number' && t.rowId > i) {
-              return { ...t, rowId: t.rowId - 1 };
-            }
+            if (t.boardId === activeBoardId && typeof t.rowId === 'number' && t.rowId > i) return { ...t, rowId: t.rowId - 1 };
             return t;
           });
           tasksChanged = true;
@@ -160,30 +194,53 @@ export default function App() {
     setTimeout(() => setNotificationBanner(''), 3500);
   };
 
-  // --- HANDLERS ---
+  // --- AUTH & TRANSITION HANDLERS ---
   const handleSplashClick = () => {
     if (introStage === 0) {
       const isLoggedIn = localStorage.getItem('workflow_auth') === 'true';
       if (isLoggedIn) {
-        setCurrentView('main');
+        // Smooth transition instead of direct opening
+        setCurrentView('transitioning');
+        setTimeout(() => setCurrentView('main'), 600);
       } else {
         setIntroStage(1);
       }
     }
   };
 
-  const handleEnterApp = (e, isGuest = false) => {
+  // Placeholder for real Google Auth (we will hook this to Firebase/Supabase later)
+  const handleGoogleLogin = (e) => {
     e.stopPropagation();
+    console.log("Google Login Triggered - Waiting for External Setup");
+    
+    // Fallback demo login until external setup is complete
     const profile = {
       ...userProfile, 
-      isGuest,
-      name: isGuest ? 'Guest Explorer' : 'Google User',
-      email: isGuest ? 'Temporary session' : 'google.user@example.com'
+      isGuest: false,
+      name: 'Google User',
+      email: 'user@gmail.com',
+      googleId: 'google-placeholder-id-123'
     };
     setUserProfile(profile);
     localStorage.setItem('workflow_auth', 'true');
     localStorage.setItem('workflow_user', JSON.stringify(profile));
-    setCurrentView('main');
+    setCurrentView('transitioning');
+    setTimeout(() => setCurrentView('main'), 600);
+  };
+
+  const handleGuestLogin = (e) => {
+    e.stopPropagation();
+    const profile = {
+      ...userProfile, 
+      isGuest: true,
+      name: 'Guest Explorer',
+      email: 'Temporary session'
+    };
+    setUserProfile(profile);
+    localStorage.setItem('workflow_auth', 'true');
+    localStorage.setItem('workflow_user', JSON.stringify(profile));
+    setCurrentView('transitioning');
+    setTimeout(() => setCurrentView('main'), 600);
   };
 
   const handleSignOut = () => {
@@ -194,16 +251,12 @@ export default function App() {
     setSidebarOpen(false);
   };
 
+  // --- TASK MANAGEMENT ---
   const handleCreateTask = () => {
     setEditingTask({
       id: 'task_' + Date.now(), 
-      boardId: activeBoardId,
-      title: 'Title', 
-      subtitle: 'Sub title', 
-      description: 'Description',
-      rowId: 'forgotten', 
-      reminder: null, 
-      isNew: true
+      boardId: activeBoardId, title: 'Title', subtitle: 'Sub title', description: 'Description',
+      rowId: 'forgotten', reminder: null, isNew: true
     }); 
   };
 
@@ -213,10 +266,7 @@ export default function App() {
   };
 
   const handleSaveTask = (updatedTask) => {
-    if (!updatedTask.title.trim()) {
-      triggerNotification('Please enter a title');
-      return;
-    }
+    if (!updatedTask.title.trim()) { triggerNotification('Please enter a title'); return; }
     setTasks(prev => {
       const exists = prev.find(t => t.id === updatedTask.id);
       const cleanTask = { ...updatedTask };
@@ -229,36 +279,52 @@ export default function App() {
 
   const handleDeleteTask = (taskId) => {
     const taskToDelete = tasks.find(t => t.id === taskId);
-    if (taskToDelete) {
-      setDeletedTasks(prev => [{ ...taskToDelete, deletedAt: Date.now() }, ...prev]);
-    }
+    if (taskToDelete) setDeletedTasks(prev => [{ ...taskToDelete, deletedAt: Date.now() }, ...prev]);
     setTasks(prev => prev.filter(t => t.id !== taskId));
     if (editingTask?.id === taskId) setEditingTask(null);
   };
 
   const handleRestoreTask = (task) => {
     setDeletedTasks(prev => prev.filter(t => t.id !== task.id));
-    const restored = { ...task };
-    delete restored.deletedAt;
+    const restored = { ...task }; delete restored.deletedAt;
     setTasks(prev => [...prev, restored]);
     triggerNotification('Angel restored your card!');
   };
 
+  // --- COIN & CALENDAR LOGIC ---
   const spawnFlyingCoins = () => {
     const rect = angelRef.current?.getBoundingClientRect();
     if (!rect) return;
     const newCoins = Array.from({ length: 5 }).map((_, i) => ({
-      id: Date.now() + i,
-      targetX: rect.left + rect.width / 2,
-      targetY: rect.top + rect.height / 2
+      id: Date.now() + i, targetX: rect.left + rect.width / 2, targetY: rect.top + rect.height / 2
     }));
     setFlyingCoins(newCoins);
     setTimeout(() => setFlyingCoins([]), 1000);
   };
 
+  const updateCalendarPoints = (earnedPoints) => {
+    const today = new Date();
+    const todayKey = today.toLocaleDateString('en-US'); // e.g., "10/23/2026"
+    
+    setPointsHistory(prev => {
+      let newHistory = [...prev];
+      const todayIndex = newHistory.findIndex(d => d.dateKey === todayKey);
+      
+      if (todayIndex !== -1) {
+        newHistory[todayIndex].value += earnedPoints;
+      } else {
+        // Shift array to remove oldest day and add today
+        newHistory.shift();
+        const dayName = today.toLocaleDateString('en-US', { weekday: 'short' });
+        const dayNum = today.getDate();
+        newHistory.push({ dateKey: todayKey, label: `${dayName} ${dayNum}`, value: earnedPoints });
+      }
+      return newHistory;
+    });
+  };
+
   const handleCompleteTask = () => {
     if (!slashingTask) return;
-    
     let earnedPoints = 1;
     if (slashingTask.rowId !== 'forgotten') {
       earnedPoints = Math.max(10 - 2 * (parseInt(slashingTask.rowId) - 1), 1);
@@ -268,8 +334,9 @@ export default function App() {
     
     setTimeout(() => {
       setPoints(p => p + earnedPoints);
+      updateCalendarPoints(earnedPoints);
       triggerNotification(`+${earnedPoints} Points!`);
-    }, 600); // add points when coins arrive
+    }, 600); // Add points when animation finishes
 
     setAnimatingTasks(prev => [...prev, slashingTask.id]);
     setCompletedTasks(prev => [{ ...slashingTask, earnedPoints, completedAt: Date.now() }, ...prev]);
@@ -283,10 +350,12 @@ export default function App() {
 
   const handleUndoTask = (completedTask) => {
     setPoints(p => Math.max(0, p - completedTask.earnedPoints));
+    updateCalendarPoints(-completedTask.earnedPoints); // Subtract from today's graph
+    
     setCompletedTasks(prev => prev.filter(t => t.id !== completedTask.id));
     const restoredTask = { ...completedTask };
-    delete restoredTask.earnedPoints;
-    delete restoredTask.completedAt;
+    delete restoredTask.earnedPoints; delete restoredTask.completedAt;
+    
     if (typeof restoredTask.rowId === 'number' && restoredTask.rowId > activeBoard.rowCount) {
       restoredTask.rowId = activeBoard.rowCount;
     }
@@ -294,25 +363,23 @@ export default function App() {
     triggerNotification('Task restored to board!');
   };
 
+  // --- DRAG AND DROP HANDLERS ---
   const handleDragStartTask = (e, taskId) => {
-    e.dataTransfer.setData('text/plain', taskId);
-    e.dataTransfer.effectAllowed = 'move';
-    setGrayGhostId(taskId);
-    setTimeout(() => setDraggedTaskId(taskId), 10);
+    e.dataTransfer.setData('text/plain', taskId); e.dataTransfer.effectAllowed = 'move';
+    setGrayGhostId(taskId); setTimeout(() => setDraggedTaskId(taskId), 10);
+  };
+
+  const handleDragStartRow = (e, rowId) => {
+    e.stopPropagation(); setDraggedRowId(rowId); e.dataTransfer.setData('text/rowId', rowId.toString());
   };
 
   const handleDragEnd = () => {
-    setDraggedTaskId(null);
-    setGrayGhostId(null);
-    setDraggedRowId(null);
-    setDragOverTaskId(null);
-    setIsHoveringTrash(false);
+    setDraggedTaskId(null); setGrayGhostId(null); setDraggedRowId(null);
+    setDragOverTaskId(null); setIsHoveringTrash(false);
   };
 
   const handleDropOnRow = (e, targetRowId) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
+    e.preventDefault(); e.stopPropagation();
     const taskId = e.dataTransfer.getData('text/plain');
     const sourceRowId = e.dataTransfer.getData('text/rowId');
 
@@ -333,6 +400,17 @@ export default function App() {
         }
         return newTasks;
       });
+    } else if (sourceRowId) {
+      const sId = parseInt(sourceRowId); const tId = parseInt(targetRowId);
+      if (sId !== tId && !isNaN(sId) && !isNaN(tId)) {
+        setTasks(prev => prev.map(t => {
+          if (t.boardId === activeBoardId) {
+            if (t.rowId === sId) return { ...t, rowId: tId };
+            if (t.rowId === tId) return { ...t, rowId: sId };
+          }
+          return t;
+        }));
+      }
     }
     handleDragEnd();
   };
@@ -344,8 +422,7 @@ export default function App() {
 
   const handleRemoveRow = () => {
     if (activeBoard.rowCount <= 1) return;
-    const oldRowCount = activeBoard.rowCount;
-    const newRowCount = oldRowCount - 1;
+    const oldRowCount = activeBoard.rowCount; const newRowCount = oldRowCount - 1;
     setTasks(prev => prev.map(t => {
       if (t.boardId === activeBoardId && t.rowId === oldRowCount) return { ...t, rowId: newRowCount };
       return t;
@@ -359,25 +436,21 @@ export default function App() {
   };
   // --- RENDERING ---
 
-  // SPLASH & AUTH SCREENS (Gradient Background)
-  if (currentView === 'splash') {
+  // SPLASH, LOGIN & TRANSITION SCREENS
+  if (currentView === 'splash' || currentView === 'transitioning') {
+    const isFading = currentView === 'transitioning';
     return (
       <div 
         onClick={handleSplashClick}
-        className="relative min-h-screen w-full flex flex-col items-center justify-center p-6 overflow-hidden select-none cursor-pointer bg-gradient-to-br from-indigo-900 via-purple-900 to-amber-900"
+        className={`relative min-h-screen w-full flex flex-col items-center justify-center p-6 overflow-hidden select-none cursor-pointer bg-gradient-to-br from-indigo-900 via-purple-900 to-amber-900 transition-all duration-500 ease-in-out ${isFading ? 'opacity-0 scale-110 pointer-events-none' : 'opacity-100 scale-100'}`}
       >
-        {/* Animated background overlay */}
         <div className="absolute inset-0 opacity-30 mix-blend-overlay" style={{ backgroundImage: 'url("https://www.transparenttextures.com/patterns/stardust.png")' }}></div>
 
         <div className={`flex flex-col items-center text-center max-w-md w-full z-10 transition-all duration-1000 ease-in-out ${introStage > 0 ? '-translate-y-32' : ''}`}>
-          <div className={`relative mb-6 transition-all duration-1000 ease-in-out ${introStage > 0 ? 'scale-125 translate-y-[-10px] shadow-[0_0_100px_rgba(251,191,36,0.8)]' : 'shadow-[0_10px_35px_rgba(251,191,36,0.4)] animate-bounce'} w-28 h-28 rounded-3xl bg-gradient-to-tr from-amber-300 to-yellow-100 flex items-center justify-center border-4 border-amber-200`}>
-            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-amber-800 drop-shadow">
-              <path d="M7 6l2 3 3-4 3 4 2-3v4H7z" fill="currentColor"/>
-              <circle cx="12" cy="12" r="3" />
-              <path d="M8 21v-3a4 4 0 0 1 8 0v3" />
-              <path d="M7 13c-4 0-6 2-4 5 1 2 2 1 2-1" />
-              <path d="M17 13c4 0 6 2 4 5-1 2-2 1-2-1" />
-            </svg>
+          
+          {/* CUSTOM BROKEN CROWN LOGO */}
+          <div className={`relative mb-6 transition-all duration-1000 ease-in-out ${introStage > 0 ? 'scale-125 translate-y-[-10px] shadow-[0_0_100px_rgba(251,191,36,0.8)]' : 'shadow-[0_10px_35px_rgba(251,191,36,0.4)] animate-bounce'} w-28 h-28 rounded-3xl bg-gradient-to-tr from-amber-300 to-yellow-100 flex items-center justify-center border-4 border-amber-200 overflow-hidden`}>
+            <img src="/icon-512.png" alt="WorkFlow Logo" className="w-[85%] h-[85%] object-contain drop-shadow-md" />
           </div>
 
           <h1 className="text-4xl sm:text-5xl font-black tracking-tight drop-shadow-md mb-2 text-white">WorkFlow</h1>
@@ -389,7 +462,8 @@ export default function App() {
           )}
 
           <div className={`w-full space-y-6 px-2 absolute top-1/2 left-1/2 -translate-x-1/2 transition-all duration-1000 ${introStage > 0 ? 'opacity-100 translate-y-32' : 'opacity-0 translate-y-48 pointer-events-none'}`}>
-            <button onClick={(e) => handleEnterApp(e, false)} className="w-full py-4 px-6 rounded-2xl bg-white text-stone-900 font-bold text-base shadow-xl hover:bg-gray-100 active:scale-95 transition-all flex items-center justify-center gap-3">
+            {/* GOOGLE AUTH BUTTON */}
+            <button onClick={handleGoogleLogin} className="w-full py-4 px-6 rounded-2xl bg-white text-stone-900 font-bold text-base shadow-xl hover:bg-gray-100 active:scale-95 transition-all flex items-center justify-center gap-3">
               <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                 <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -399,7 +473,8 @@ export default function App() {
               <span>Continue with Google</span>
             </button>
 
-            <button onClick={(e) => handleEnterApp(e, true)} className="w-full mt-4 py-4 px-6 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold text-sm backdrop-blur-md active:scale-95 transition-all flex items-center justify-center gap-2">
+            {/* GUEST BUTTON */}
+            <button onClick={handleGuestLogin} className="w-full mt-4 py-4 px-6 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold text-sm backdrop-blur-md active:scale-95 transition-all flex items-center justify-center gap-2">
               <User size={18} />
               <span>Enter as Guest</span>
             </button>
@@ -534,7 +609,7 @@ export default function App() {
           </button>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 mr-20 sm:mr-28">
           <button onClick={() => setGraveyardOpen(true)} className={`p-2.5 rounded-xl border transition-colors shadow-md ${theme === 'night' ? 'bg-slate-900/80 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white' : 'bg-white/80 border-stone-300 text-stone-600 hover:bg-white hover:text-stone-900'}`}>
              <Skull size={20} />
           </button>
@@ -548,26 +623,19 @@ export default function App() {
       </header>
 
       {/* MAIN LEADERBOARD BODY */}
-      {/* pr-28 ensures tasks don't get hidden under the persistent right-side bin */}
       <div className="relative z-10 flex-1 flex flex-col min-h-screen pt-20 pr-20 sm:pr-28">
         <main className="flex-1 w-full max-w-5xl mx-auto px-3 sm:px-6 py-4 pb-36 relative">
           <div className="flex items-start gap-3 sm:gap-6 relative">
             
             {/* CENTRAL LEADERBOARD SPINE & ANGEL */}
             <div className="flex flex-col items-center shrink-0 select-none relative z-10 pt-2">
-              {/* Angel Trigger Ref */}
+              {/* Angel Trigger Ref (Using Custom Logo) */}
               <div 
                 ref={angelRef}
                 onClick={() => setActiveModal('treasure')}
-                className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-tr from-amber-400 to-yellow-200 flex items-center justify-center shadow-[0_4px_20px_rgba(245,158,11,0.5)] border-2 border-yellow-100 z-10 relative cursor-pointer hover:scale-110 active:scale-95 transition-all"
+                className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-tr from-amber-400 to-yellow-200 flex items-center justify-center shadow-[0_4px_20px_rgba(245,158,11,0.5)] border-2 border-yellow-100 z-10 relative cursor-pointer hover:scale-110 active:scale-95 transition-all overflow-hidden p-1.5"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-amber-900">
-                  <path d="M7 6l2 3 3-4 3 4 2-3v4H7z" fill="currentColor"/>
-                  <circle cx="12" cy="12" r="3" />
-                  <path d="M8 21v-3a4 4 0 0 1 8 0v3" />
-                  <path d="M7 13c-4 0-6 2-4 5 1 2 2 1 2-1" />
-                  <path d="M17 13c4 0 6 2 4 5-1 2-2 1-2-1" />
-                </svg>
+                <img src="/icon-512.png" alt="Crown" className="w-full h-full object-contain opacity-90" />
               </div>
 
               <div 
@@ -595,18 +663,10 @@ export default function App() {
                     <div className="flex-1 flex flex-wrap gap-2 sm:gap-3 items-center min-h-[75px] pl-2 sm:pl-3 relative">
                       {rowTasks.map((task, index) => (
                         <TaskCard 
-                          key={task.id} task={task} colorObj={rowStyle}
-                          index={index}
-                          isDragged={draggedTaskId === task.id}
-                          isGrayGhost={grayGhostId === task.id}
-                          isDragOver={dragOverTaskId === task.id}
-                          isAnimating={animatingTasks.includes(task.id)}
-                          onClick={() => setEditingTask(task)}
-                          onSlash={() => setSlashingTask(task)}
-                          onDuplicate={(e) => { e.stopPropagation(); handleDuplicateTask(task); }}
-                          onDragStart={handleDragStartTask}
-                          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (draggedTaskId && draggedTaskId !== task.id) setDragOverTaskId(task.id); }}
-                          onDragEnd={handleDragEnd}
+                          key={task.id} task={task} colorObj={rowStyle} index={index}
+                          isDragged={draggedTaskId === task.id} isGrayGhost={grayGhostId === task.id} isDragOver={dragOverTaskId === task.id} isAnimating={animatingTasks.includes(task.id)}
+                          onClick={() => setEditingTask(task)} onSlash={() => setSlashingTask(task)} onDuplicate={(e) => { e.stopPropagation(); handleDuplicateTask(task); }}
+                          onDragStart={handleDragStartTask} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (draggedTaskId && draggedTaskId !== task.id) setDragOverTaskId(task.id); }} onDragEnd={handleDragEnd}
                         />
                       ))}
                     </div>
@@ -631,16 +691,9 @@ export default function App() {
                   <div className="flex flex-wrap gap-2 sm:gap-3 items-center min-h-[90px]">
                     {tasks.filter(t => t.boardId === activeBoardId && t.rowId === 'forgotten').map((task, index) => (
                       <TaskCard key={task.id} task={task} colorObj={FORGOTTEN_COLOR} index={index} 
-                        isDragged={draggedTaskId === task.id} 
-                        isGrayGhost={grayGhostId === task.id}
-                        isDragOver={dragOverTaskId === task.id} 
-                        isAnimating={animatingTasks.includes(task.id)} 
-                        onClick={() => setEditingTask(task)} 
-                        onSlash={() => setSlashingTask(task)} 
-                        onDuplicate={(e) => { e.stopPropagation(); handleDuplicateTask(task); }}
-                        onDragStart={handleDragStartTask} 
-                        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (draggedTaskId && draggedTaskId !== task.id) setDragOverTaskId(task.id); }} 
-                        onDragEnd={handleDragEnd}/>
+                        isDragged={draggedTaskId === task.id} isGrayGhost={grayGhostId === task.id} isDragOver={dragOverTaskId === task.id} isAnimating={animatingTasks.includes(task.id)} 
+                        onClick={() => setEditingTask(task)} onSlash={() => setSlashingTask(task)} onDuplicate={(e) => { e.stopPropagation(); handleDuplicateTask(task); }}
+                        onDragStart={handleDragStartTask} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (draggedTaskId && draggedTaskId !== task.id) setDragOverTaskId(task.id); }} onDragEnd={handleDragEnd}/>
                     ))}
                     {tasks.filter(t => t.boardId === activeBoardId && t.rowId === 'forgotten').length === 0 && <div className="w-full text-center py-4 opacity-50 text-xs italic">Drag tasks here to remove priority</div>}
                   </div>
@@ -859,11 +912,12 @@ export default function App() {
             <div className="flex-1 p-6 z-20 flex items-end justify-between gap-2 overflow-x-auto">
                {pointsHistory.map((day, idx) => {
                  const maxVal = Math.max(...pointsHistory.map(d => d.value));
+                 // If maxVal is 0, render empty bars. Otherwise calculate height.
                  const heightPercent = maxVal === 0 ? 0 : (day.value / maxVal) * 100;
                  return (
                    <div key={idx} className="flex flex-col items-center justify-end h-full flex-1 min-w-[50px] group">
                       <span className="font-black text-white text-lg mb-2 opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md">{day.value}</span>
-                      <div className="w-full max-w-[40px] bg-white/40 rounded-t-xl hover:bg-white/60 transition-all border-t-2 border-l-2 border-r-2 border-white/50" style={{ height: `${heightPercent}%` }}></div>
+                      <div className="w-full max-w-[40px] bg-white/40 rounded-t-xl hover:bg-white/60 transition-all border-t-2 border-l-2 border-r-2 border-white/50" style={{ height: `${heightPercent}%`, minHeight: '4px' }}></div>
                       <span className="text-[10px] font-bold text-white uppercase tracking-wider mt-4 whitespace-nowrap opacity-80">{day.label}</span>
                    </div>
                  );
@@ -881,7 +935,7 @@ export default function App() {
             
             <div className={`flex justify-between items-center p-6 border-b ${theme === 'night' ? 'border-amber-500/20 bg-black/20' : 'border-amber-500/10 bg-amber-50/50'}`}>
               <h3 className="font-black text-xl text-amber-500 flex items-center gap-2">
-                <Sword size={24} />
+                <img src="/icon-512.png" alt="Crown" className="w-6 h-6 object-contain" />
                 Completed Quests
               </h3>
               <button onClick={() => setActiveModal(null)} className="p-2 rounded-full hover:bg-black/10 transition-colors"><X size={20} /></button>
@@ -986,3 +1040,4 @@ if (rootElement) {
     </React.StrictMode>
   );
 }
+  

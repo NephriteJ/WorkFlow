@@ -7,6 +7,21 @@ import {
   Check, Image as ImageIcon, AlertCircle, UploadCloud, Sword, MoreVertical,
   Copy, LogOut, Skull, ShieldPlus, BarChart3, LogIn
 } from 'lucide-react';
+import { initializeApp } from "firebase/app";
+import { getAuth, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAv1k8euZ6MVfgN1ffQ0vQfXg0GXmt9SPM",
+  authDomain: "workflow-3666c.firebaseapp.com",
+  projectId: "workflow-3666c",
+  storageBucket: "workflow-3666c.firebasestorage.app",
+  messagingSenderId: "772308564055",
+  appId: "1:772308564055:web:22eed5ff3b2387cc33cb12"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const googleProvider = new GoogleAuthProvider();
 
 const DYNAMIC_COLORS = [
   { hue: 45, sat: 100, baseL: 55, text: 'text-amber-950' },   
@@ -209,9 +224,32 @@ export default function App() {
   };
 
   // Placeholder for real Google Auth (we will hook this to Firebase/Supabase later)
-  const handleGoogleLogin = (e) => {
+  const handleGoogleLogin = async (e) => {
     e.stopPropagation();
-    console.log("Google Login Triggered - Waiting for External Setup");
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+      
+      const profile = {
+        ...userProfile, 
+        isGuest: false,
+        name: user.displayName || 'Google User',
+        email: user.email,
+        avatar: user.photoURL || AVATARS[0],
+        googleId: user.uid
+      };
+      
+      setUserProfile(profile);
+      localStorage.setItem('workflow_auth', 'true');
+      localStorage.setItem('workflow_user', JSON.stringify(profile));
+      setCurrentView('transitioning');
+      setTimeout(() => setCurrentView('main'), 600);
+      
+    } catch (error) {
+      console.error("Google Sign-In Error:", error);
+      alert("Sign in failed. Please try again.");
+    }
+  };
     
     // Fallback demo login until external setup is complete
     const profile = {

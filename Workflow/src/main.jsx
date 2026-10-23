@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import { 
   Sun, Moon, Plus, X, AlignLeft, 
-  Settings, User, ChevronRight, Clock, 
+  Settings, User, Clock, 
   Trash2, Pin, Edit2, MinusCircle, Bell, 
   Check, Image as ImageIcon, AlertCircle, UploadCloud, Sword, MoreVertical,
   Copy, LogOut, Skull, ShieldPlus, BarChart3, LogIn
@@ -10,6 +10,7 @@ import {
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
 
+// --- FIREBASE SETUP ---
 const firebaseConfig = {
   apiKey: "AIzaSyAv1k8euZ6MVfgN1ffQ0vQfXg0GXmt9SPM",
   authDomain: "workflow-3666c.firebaseapp.com",
@@ -23,6 +24,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 
+// --- CONSTANTS ---
 const DYNAMIC_COLORS = [
   { hue: 45, sat: 100, baseL: 55, text: 'text-amber-950' },   
   { hue: 25, sat: 100, baseL: 55, text: 'text-white' },       
@@ -45,12 +47,10 @@ const AVATARS = [
 
 export default function App() {
   // --- AUTH & INTRO STATE ---
-  // currentView can be 'splash', 'transitioning', or 'main'
-  const [currentView, setCurrentView] = useState('splash');
+  const [currentView, setCurrentView] = useState('splash'); // 'splash', 'transitioning', or 'main'
   const [introStage, setIntroStage] = useState(0); 
   const [theme, setTheme] = useState('night'); 
 
-  // Google Auth preparation state
   const [userProfile, setUserProfile] = useState(() => {
     const saved = localStorage.getItem('workflow_user');
     return saved ? JSON.parse(saved) : { 
@@ -72,7 +72,6 @@ export default function App() {
     const saved = localStorage.getItem('workflow_history');
     if (saved) return JSON.parse(saved);
     
-    // Generate actual calendar for the last 7 days starting at 0
     const history = [];
     const today = new Date();
     for(let i = 6; i >= 0; i--) {
@@ -80,7 +79,7 @@ export default function App() {
       d.setDate(d.getDate() - i);
       const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
       const dayNum = d.getDate();
-      const dateKey = d.toLocaleDateString('en-US'); // e.g., "10/23/2026"
+      const dateKey = d.toLocaleDateString('en-US');
       history.push({ dateKey, label: `${dayName} ${dayNum}`, value: 0 });
     }
     return history;
@@ -214,7 +213,6 @@ export default function App() {
     if (introStage === 0) {
       const isLoggedIn = localStorage.getItem('workflow_auth') === 'true';
       if (isLoggedIn) {
-        // Smooth transition instead of direct opening
         setCurrentView('transitioning');
         setTimeout(() => setCurrentView('main'), 600);
       } else {
@@ -223,7 +221,6 @@ export default function App() {
     }
   };
 
-  // Placeholder for real Google Auth (we will hook this to Firebase/Supabase later)
   const handleGoogleLogin = async (e) => {
     e.stopPropagation();
     try {
@@ -249,21 +246,6 @@ export default function App() {
       console.error("Google Sign-In Error:", error);
       alert("Sign in failed. Please try again.");
     }
-  };
-    
-    // Fallback demo login until external setup is complete
-    const profile = {
-      ...userProfile, 
-      isGuest: false,
-      name: 'Google User',
-      email: 'user@gmail.com',
-      googleId: 'google-placeholder-id-123'
-    };
-    setUserProfile(profile);
-    localStorage.setItem('workflow_auth', 'true');
-    localStorage.setItem('workflow_user', JSON.stringify(profile));
-    setCurrentView('transitioning');
-    setTimeout(() => setCurrentView('main'), 600);
   };
 
   const handleGuestLogin = (e) => {
@@ -342,7 +324,7 @@ export default function App() {
 
   const updateCalendarPoints = (earnedPoints) => {
     const today = new Date();
-    const todayKey = today.toLocaleDateString('en-US'); // e.g., "10/23/2026"
+    const todayKey = today.toLocaleDateString('en-US'); 
     
     setPointsHistory(prev => {
       let newHistory = [...prev];
@@ -351,7 +333,6 @@ export default function App() {
       if (todayIndex !== -1) {
         newHistory[todayIndex].value += earnedPoints;
       } else {
-        // Shift array to remove oldest day and add today
         newHistory.shift();
         const dayName = today.toLocaleDateString('en-US', { weekday: 'short' });
         const dayNum = today.getDate();
@@ -374,7 +355,7 @@ export default function App() {
       setPoints(p => p + earnedPoints);
       updateCalendarPoints(earnedPoints);
       triggerNotification(`+${earnedPoints} Points!`);
-    }, 600); // Add points when animation finishes
+    }, 600);
 
     setAnimatingTasks(prev => [...prev, slashingTask.id]);
     setCompletedTasks(prev => [{ ...slashingTask, earnedPoints, completedAt: Date.now() }, ...prev]);
@@ -388,7 +369,7 @@ export default function App() {
 
   const handleUndoTask = (completedTask) => {
     setPoints(p => Math.max(0, p - completedTask.earnedPoints));
-    updateCalendarPoints(-completedTask.earnedPoints); // Subtract from today's graph
+    updateCalendarPoints(-completedTask.earnedPoints); 
     
     setCompletedTasks(prev => prev.filter(t => t.id !== completedTask.id));
     const restoredTask = { ...completedTask };
@@ -1078,4 +1059,3 @@ if (rootElement) {
     </React.StrictMode>
   );
 }
-  

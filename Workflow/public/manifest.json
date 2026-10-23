@@ -1,0 +1,16 @@
+{
+  "name": "WorkFlow",
+  "short_name": "WorkFlow",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0c051a",
+  "theme_color": "#0c051a",
+  "icons": [
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ReactDOM from 'react-dom/client';
 import { 
   Sun, Moon, Plus, X, AlignLeft, 
   Settings, User, ChevronRight, Clock, 
@@ -865,5 +866,13 @@ function TaskCard({ task, colorObj, index = 0, isDragged, isGrayGhost, isDragOve
         {task.reminder && <Clock size={12} className="shrink-0 opacity-80" />}
       </div>
     </div>
+  );
+}
+const rootElement = document.getElementById('root');
+if (rootElement) {
+  ReactDOM.createRoot(rootElement).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
   );
 }

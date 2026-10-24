@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
-
+import DiamondGame from './DiamondGame.jsx';
 // --- FIREBASE SETUP ---
 const firebaseConfig = {
   apiKey: "AIzaSyAv1k8euZ6MVfgN1ffQ0vQfXg0GXmt9SPM",
@@ -93,6 +93,7 @@ export default function App() {
   const [lockedRows, setLockedRows] = useState(() => safeLoad('workflow_locked_rows', []));
   const [deletedTasks, setDeletedTasks] = useState(() => safeLoad('workflow_deleted', []));
   const [completedTasks, setCompletedTasks] = useState(() => safeLoad('workflow_completed', []));
+  const [showDiamondGame, setShowDiamondGame] = useState(false);
 
   // --- UI STATE ---
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -579,6 +580,15 @@ export default function App() {
             <span className="font-black text-amber-500 text-sm tracking-wide">{points} pts</span>
           </button>
         </div>
+        <div className="flex items-center gap-3 mr-20 sm:mr-28">
+  {/* NEW DIAMOND GAME BUTTON */}
+  <button onClick={() => setShowDiamondGame(true)} className="p-2.5 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white shadow-md transition-all">
+     <div className="rotate-45 font-black text-sm flex items-center justify-center w-5 h-5">♦</div>
+  </button>
+
+  <button onClick={() => setGraveyardOpen(true)} className={`p-2.5 rounded-xl border transition-colors shadow-md ...`}>
+     <Skull size={20} />
+  </button>
 
         <div className="flex items-center gap-3 mr-20 sm:mr-28">
           <button onClick={() => setGraveyardOpen(true)} className={`p-2.5 rounded-xl border transition-colors shadow-md ${theme === 'night' ? 'bg-slate-900/80 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white' : 'bg-white/80 border-stone-300 text-stone-600 hover:bg-white hover:text-stone-900'}`}>
@@ -882,6 +892,7 @@ export default function App() {
           </div>
         </div>
       )}
+        {showDiamondGame && <DiamondGame onClose={() => setShowDiamondGame(false)} />}
     </div>
   );
 }
@@ -948,6 +959,7 @@ function TaskCard({ task, colorObj, index = 0, isDragged, isGrayGhost, isDragOve
             </>
           )}
         </div>
+        
       </div>
 
       <div className="flex items-center justify-between mt-auto">

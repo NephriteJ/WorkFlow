@@ -5,7 +5,8 @@ import {
   Settings, User, Clock, 
   Trash2, Pin, Edit2, MinusCircle, Bell, 
   Check, Image as ImageIcon, AlertCircle, UploadCloud, Sword, MoreVertical,
-  Copy, LogOut, Skull, ShieldPlus, BarChart3, LogIn
+  Copy, LogOut, Skull, ShieldPlus, BarChart3, LogIn,
+  Lock, Unlock, Bandage
 } from 'lucide-react';
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
@@ -47,22 +48,18 @@ const AVATARS = [
 
 export default function App() {
   // --- AUTH & INTRO STATE ---
-  const [currentView, setCurrentView] = useState('splash'); // 'splash', 'transitioning', or 'main'
+  const [currentView, setCurrentView] = useState('splash');
   const [introStage, setIntroStage] = useState(0); 
   const [theme, setTheme] = useState('night'); 
 
   const [userProfile, setUserProfile] = useState(() => {
     const saved = localStorage.getItem('workflow_user');
     return saved ? JSON.parse(saved) : { 
-      name: 'Guest Explorer', 
-      email: 'Temporary session', 
-      avatar: AVATARS[0], 
-      isGuest: true,
-      googleId: null 
+      name: 'Guest Explorer', email: 'Temporary session', avatar: AVATARS[0], isGuest: true, googleId: null 
     };
   });
   
-  // --- ACTUAL CALENDAR COIN TRACKING (Starts at 0) ---
+  // --- COIN TRACKING ---
   const [points, setPoints] = useState(() => {
     const saved = localStorage.getItem('workflow_points');
     return saved ? parseInt(saved) : 0;
@@ -85,7 +82,7 @@ export default function App() {
     return history;
   });
 
-  // --- BOARDS & TASKS ---
+  // --- BOARDS, TASKS & LOCKS ---
   const [boards, setBoards] = useState([{ id: 'b1', name: 'Main Board', isPinned: true, rowCount: 5 }]);
   const [activeBoardId, setActiveBoardId] = useState('b1');
   const [boardMenuOpen, setBoardMenuOpen] = useState(null);
@@ -93,8 +90,13 @@ export default function App() {
   const [tasks, setTasks] = useState(() => {
     const saved = localStorage.getItem('workflow_tasks');
     return saved ? JSON.parse(saved) : [
-      { id: 't1', boardId: 'b1', title: 'Title', subtitle: 'Sub title', description: 'Description', rowId: 1, reminder: null }
+      { id: 't1', boardId: 'b1', title: 'Title', subtitle: 'Sub title', description: 'Description', rowId: 1, reminder: null, isLocked: false }
     ];
+  });
+  
+  const [lockedRows, setLockedRows] = useState(() => {
+    const saved = localStorage.getItem('workflow_locked_rows');
+    return saved ? JSON.parse(saved) : [];
   });
   
   const [deletedTasks, setDeletedTasks] = useState(() => {
@@ -113,40 +115,35 @@ export default function App() {
   const [editingTask, setEditingTask] = useState(null);
   const [activeModal, setActiveModal] = useState(null); 
   const [notificationBanner, setNotificationBanner] = useState('');
-  
-  // Header scroll tracking
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const [lastScrollY, setLastScrollY] = useState(0);
 
-  // --- DRAG & DROP ---
+  // --- DRAG & DROP WITH GLITCH PREVENTION ---
+  const [globalDragState, setGlobalDragState] = useState(null); // 'card' or 'row'
   const [draggedTaskId, setDraggedTaskId] = useState(null);
   const [grayGhostId, setGrayGhostId] = useState(null); 
   const [dragOverTaskId, setDragOverTaskId] = useState(null); 
   const [draggedRowId, setDraggedRowId] = useState(null);
   const [isHoveringTrash, setIsHoveringTrash] = useState(false);
+  const [rowDragHoverId, setRowDragHoverId] = useState(null); 
   
-  // --- ANIMATIONS ---
+  const dragTimeoutRef = useRef(null); // Used to wait 1s before giggling/shifting
+  const angelRef = useRef(null);
+
   const [slashingTask, setSlashingTask] = useState(null);
   const [animatingTasks, setAnimatingTasks] = useState([]); 
   const [flyingCoins, setFlyingCoins] = useState([]);
-  const angelRef = useRef(null);
 
   const activeBoard = boards.find(b => b.id === activeBoardId) || boards[0];
-  // --- 1. LOCAL STORAGE SAVING ---
+
+  // --- EFFECTS ---
   useEffect(() => { localStorage.setItem('workflow_tasks', JSON.stringify(tasks)); }, [tasks]);
   useEffect(() => { localStorage.setItem('workflow_points', points.toString()); }, [points]);
   useEffect(() => { localStorage.setItem('workflow_history', JSON.stringify(pointsHistory)); }, [pointsHistory]);
   useEffect(() => { localStorage.setItem('workflow_completed', JSON.stringify(completedTasks)); }, [completedTasks]);
   useEffect(() => { localStorage.setItem('workflow_deleted', JSON.stringify(deletedTasks)); }, [deletedTasks]);
+  useEffect(() => { localStorage.setItem('workflow_locked_rows', JSON.stringify(lockedRows)); }, [lockedRows]);
 
-  // --- 2. PRELOAD IMAGES ---
-  useEffect(() => {
-    ['/icon-512.png', '/night01.jpg', '/day01.jpg', ...AVATARS].forEach((src) => {
-      const img = new Image(); img.src = src;
-    });
-  }, []);
-
-  // --- 3. MODAL SCROLL LOCK ---
   useEffect(() => {
     if (activeModal || editingTask || slashingTask || graveyardOpen || sidebarOpen) {
       document.body.style.overflow = 'hidden';
@@ -156,31 +153,18 @@ export default function App() {
     return () => { document.body.style.overflow = 'auto'; };
   }, [activeModal, editingTask, slashingTask, graveyardOpen, sidebarOpen]);
 
-  // --- 4. HEADER SCROLL TRACKING (Fixed Boundary) ---
   useEffect(() => {
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
-      
-      // If we are at the very top of the page, ALWAYS show the header
-      if (currentScrollY <= 10) {
-        setIsHeaderVisible(true);
-      } 
-      // Scrolling down the page (sliding finger up) -> Hide header
-      else if (currentScrollY > lastScrollY) {
-        setIsHeaderVisible(false);
-      } 
-      // Scrolling up the page (sliding finger down) -> Show header
-      else {
-        setIsHeaderVisible(true);
-      }
-      
+      if (currentScrollY <= 10) setIsHeaderVisible(true);
+      else if (currentScrollY > lastScrollY) setIsHeaderVisible(false);
+      else setIsHeaderVisible(true);
       setLastScrollY(currentScrollY);
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, [lastScrollY]);
 
-  // --- 5. ROW CASCADE LOGIC ---
   useEffect(() => {
     if (tasks.length === 0) return;
     let tasksChanged = false;
@@ -207,7 +191,6 @@ export default function App() {
     setNotificationBanner(msg);
     setTimeout(() => setNotificationBanner(''), 3500);
   };
-
   // --- AUTH & TRANSITION HANDLERS ---
   const handleSplashClick = () => {
     if (introStage === 0) {
@@ -241,7 +224,6 @@ export default function App() {
       localStorage.setItem('workflow_user', JSON.stringify(profile));
       setCurrentView('transitioning');
       setTimeout(() => setCurrentView('main'), 600);
-      
     } catch (error) {
       console.error("Google Sign-In Error:", error);
       alert("Sign in failed. Please try again.");
@@ -250,12 +232,7 @@ export default function App() {
 
   const handleGuestLogin = (e) => {
     e.stopPropagation();
-    const profile = {
-      ...userProfile, 
-      isGuest: true,
-      name: 'Guest Explorer',
-      email: 'Temporary session'
-    };
+    const profile = { ...userProfile, isGuest: true, name: 'Guest Explorer', email: 'Temporary session' };
     setUserProfile(profile);
     localStorage.setItem('workflow_auth', 'true');
     localStorage.setItem('workflow_user', JSON.stringify(profile));
@@ -271,26 +248,19 @@ export default function App() {
     setSidebarOpen(false);
   };
 
-  // --- TASK MANAGEMENT ---
+  // --- TASK & LOCK MANAGEMENT ---
   const handleCreateTask = () => {
     setEditingTask({
-      id: 'task_' + Date.now(), 
-      boardId: activeBoardId, title: 'Title', subtitle: 'Sub title', description: 'Description',
-      rowId: 'forgotten', reminder: null, isNew: true
+      id: 'task_' + Date.now(), boardId: activeBoardId, title: 'Title', subtitle: 'Sub title', description: 'Description',
+      rowId: 'forgotten', reminder: null, isLocked: false, isNew: true
     }); 
-  };
-
-  const handleDuplicateTask = (task) => {
-    setTasks(prev => [...prev, { ...task, id: 'task_' + Date.now() }]);
-    triggerNotification('Card Duplicated');
   };
 
   const handleSaveTask = (updatedTask) => {
     if (!updatedTask.title.trim()) { triggerNotification('Please enter a title'); return; }
     setTasks(prev => {
       const exists = prev.find(t => t.id === updatedTask.id);
-      const cleanTask = { ...updatedTask };
-      delete cleanTask.isNew;
+      const cleanTask = { ...updatedTask }; delete cleanTask.isNew;
       if (exists) return prev.map(t => t.id === cleanTask.id ? cleanTask : t);
       return [cleanTask, ...prev]; 
     });
@@ -299,8 +269,12 @@ export default function App() {
 
   const handleDeleteTask = (taskId) => {
     const taskToDelete = tasks.find(t => t.id === taskId);
-    if (taskToDelete) setDeletedTasks(prev => [{ ...taskToDelete, deletedAt: Date.now() }, ...prev]);
-    setTasks(prev => prev.filter(t => t.id !== taskId));
+    if (taskToDelete && !taskToDelete.isLocked) {
+      setDeletedTasks(prev => [{ ...taskToDelete, deletedAt: Date.now() }, ...prev]);
+      setTasks(prev => prev.filter(t => t.id !== taskId));
+    } else if (taskToDelete?.isLocked) {
+      triggerNotification("Cannot delete a locked card.");
+    }
     if (editingTask?.id === taskId) setEditingTask(null);
   };
 
@@ -308,10 +282,19 @@ export default function App() {
     setDeletedTasks(prev => prev.filter(t => t.id !== task.id));
     const restored = { ...task }; delete restored.deletedAt;
     setTasks(prev => [...prev, restored]);
-    triggerNotification('Angel restored your card!');
+    triggerNotification('Restored card from graveyard!');
   };
 
-  // --- COIN & CALENDAR LOGIC ---
+  const toggleCardLock = (e, taskId) => {
+    e.stopPropagation();
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, isLocked: !t.isLocked } : t));
+  };
+
+  const toggleRowLock = (rowId) => {
+    setLockedRows(prev => prev.includes(rowId) ? prev.filter(id => id !== rowId) : [...prev, rowId]);
+  };
+
+  // --- COIN, CALENDAR & ANGEL LOGIC ---
   const spawnFlyingCoins = () => {
     const rect = angelRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -325,32 +308,28 @@ export default function App() {
   const updateCalendarPoints = (earnedPoints) => {
     const today = new Date();
     const todayKey = today.toLocaleDateString('en-US'); 
-    
     setPointsHistory(prev => {
       let newHistory = [...prev];
       const todayIndex = newHistory.findIndex(d => d.dateKey === todayKey);
-      
-      if (todayIndex !== -1) {
-        newHistory[todayIndex].value += earnedPoints;
-      } else {
+      if (todayIndex !== -1) newHistory[todayIndex].value = Math.max(0, newHistory[todayIndex].value + earnedPoints);
+      else {
         newHistory.shift();
         const dayName = today.toLocaleDateString('en-US', { weekday: 'short' });
         const dayNum = today.getDate();
-        newHistory.push({ dateKey: todayKey, label: `${dayName} ${dayNum}`, value: earnedPoints });
+        newHistory.push({ dateKey: todayKey, label: `${dayName} ${dayNum}`, value: Math.max(0, earnedPoints) });
       }
       return newHistory;
     });
   };
 
   const handleCompleteTask = () => {
-    if (!slashingTask) return;
+    if (!slashingTask || slashingTask.isLocked) return;
     let earnedPoints = 1;
     if (slashingTask.rowId !== 'forgotten') {
       earnedPoints = Math.max(10 - 2 * (parseInt(slashingTask.rowId) - 1), 1);
     }
     
     spawnFlyingCoins();
-    
     setTimeout(() => {
       setPoints(p => p + earnedPoints);
       updateCalendarPoints(earnedPoints);
@@ -367,6 +346,7 @@ export default function App() {
     }, 600);
   };
 
+  // Restores slashed task from the Angel/Completed list using the bandage button
   const handleUndoTask = (completedTask) => {
     setPoints(p => Math.max(0, p - completedTask.earnedPoints));
     updateCalendarPoints(-completedTask.earnedPoints); 
@@ -379,26 +359,69 @@ export default function App() {
       restoredTask.rowId = activeBoard.rowCount;
     }
     setTasks(prev => [...prev, restoredTask]);
-    triggerNotification('Task restored to board!');
+    triggerNotification('Card restored and points adjusted.');
   };
 
-  // --- DRAG AND DROP HANDLERS ---
-  const handleDragStartTask = (e, taskId) => {
-    e.dataTransfer.setData('text/plain', taskId); e.dataTransfer.effectAllowed = 'move';
-    setGrayGhostId(taskId); setTimeout(() => setDraggedTaskId(taskId), 10);
+  // --- DRAG AND DROP HANDLERS WITH GLITCH/DELAY FIX ---
+  const handleDragStartTask = (e, task) => {
+    if (task.isLocked || lockedRows.includes(task.rowId)) {
+      e.preventDefault();
+      return;
+    }
+    e.dataTransfer.setData('text/plain', task.id); 
+    e.dataTransfer.effectAllowed = 'move';
+    setGlobalDragState('card');
+    setGrayGhostId(task.id); 
+    setTimeout(() => setDraggedTaskId(task.id), 10);
   };
 
   const handleDragStartRow = (e, rowId) => {
-    e.stopPropagation(); setDraggedRowId(rowId); e.dataTransfer.setData('text/rowId', rowId.toString());
+    if (lockedRows.includes(rowId)) {
+      e.preventDefault();
+      return;
+    }
+    e.stopPropagation(); 
+    setGlobalDragState('row');
+    setDraggedRowId(rowId); 
+    e.dataTransfer.setData('text/rowId', rowId.toString());
   };
 
   const handleDragEnd = () => {
     setDraggedTaskId(null); setGrayGhostId(null); setDraggedRowId(null);
-    setDragOverTaskId(null); setIsHoveringTrash(false);
+    setDragOverTaskId(null); setIsHoveringTrash(false); setGlobalDragState(null); setRowDragHoverId(null);
+    if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
+  };
+
+  const handleDragOverTask = (e, targetTaskId) => {
+    e.preventDefault(); e.stopPropagation();
+    if (draggedTaskId && draggedTaskId !== targetTaskId) {
+      // 1-second delay before moving things to stop the rapid giggling glitch
+      if (!dragTimeoutRef.current) {
+        dragTimeoutRef.current = setTimeout(() => {
+          setDragOverTaskId(targetTaskId);
+          dragTimeoutRef.current = null;
+        }, 1000); 
+      }
+    }
+  };
+
+  const handleDragLeaveTask = () => {
+    if (dragTimeoutRef.current) {
+      clearTimeout(dragTimeoutRef.current);
+      dragTimeoutRef.current = null;
+    }
   };
 
   const handleDropOnRow = (e, targetRowId) => {
     e.preventDefault(); e.stopPropagation();
+    if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
+    
+    if (lockedRows.includes(targetRowId)) {
+      triggerNotification("Target row is locked.");
+      handleDragEnd();
+      return;
+    }
+
     const taskId = e.dataTransfer.getData('text/plain');
     const sourceRowId = e.dataTransfer.getData('text/rowId');
 
@@ -442,16 +465,15 @@ export default function App() {
   const handleRemoveRow = () => {
     if (activeBoard.rowCount <= 1) return;
     const oldRowCount = activeBoard.rowCount; const newRowCount = oldRowCount - 1;
+    if (lockedRows.includes(oldRowCount)) {
+       triggerNotification("Cannot remove a locked row.");
+       return;
+    }
     setTasks(prev => prev.map(t => {
       if (t.boardId === activeBoardId && t.rowId === oldRowCount) return { ...t, rowId: newRowCount };
       return t;
     }));
     setBoards(prev => prev.map(b => b.id === activeBoardId ? { ...b, rowCount: newRowCount } : b));
-  };
-
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) setUserProfile(prev => ({ ...prev, avatar: URL.createObjectURL(file) }));
   };
   // --- RENDERING ---
 
@@ -467,7 +489,6 @@ export default function App() {
 
         <div className={`flex flex-col items-center text-center max-w-md w-full z-10 transition-all duration-1000 ease-in-out ${introStage > 0 ? '-translate-y-32' : ''}`}>
           
-          {/* CUSTOM BROKEN CROWN LOGO */}
           <div className={`relative mb-6 transition-all duration-1000 ease-in-out ${introStage > 0 ? 'scale-125 translate-y-[-10px] shadow-[0_0_100px_rgba(251,191,36,0.8)]' : 'shadow-[0_10px_35px_rgba(251,191,36,0.4)] animate-bounce'} w-28 h-28 rounded-3xl bg-gradient-to-tr from-amber-300 to-yellow-100 flex items-center justify-center border-4 border-amber-200 overflow-hidden`}>
             <img src="/icon-512.png" alt="WorkFlow Logo" className="w-[85%] h-[85%] object-contain drop-shadow-md" />
           </div>
@@ -481,7 +502,6 @@ export default function App() {
           )}
 
           <div className={`w-full space-y-6 px-2 absolute top-1/2 left-1/2 -translate-x-1/2 transition-all duration-1000 ${introStage > 0 ? 'opacity-100 translate-y-32' : 'opacity-0 translate-y-48 pointer-events-none'}`}>
-            {/* GOOGLE AUTH BUTTON */}
             <button onClick={handleGoogleLogin} className="w-full py-4 px-6 rounded-2xl bg-white text-stone-900 font-bold text-base shadow-xl hover:bg-gray-100 active:scale-95 transition-all flex items-center justify-center gap-3">
               <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -492,7 +512,6 @@ export default function App() {
               <span>Continue with Google</span>
             </button>
 
-            {/* GUEST BUTTON */}
             <button onClick={handleGuestLogin} className="w-full mt-4 py-4 px-6 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold text-sm backdrop-blur-md active:scale-95 transition-all flex items-center justify-center gap-2">
               <User size={18} />
               <span>Enter as Guest</span>
@@ -500,7 +519,7 @@ export default function App() {
 
             <div className="flex flex-col items-center justify-center gap-1.5 text-[11px] text-amber-100/70 pt-3 leading-relaxed text-center px-4">
               <span className="flex items-center gap-1 font-bold text-amber-300"><AlertCircle size={12} /> Privacy Warning</span>
-              <span>Guest mode runs entirely in this browser. If you clear your history or lose this device, your tasks and progress will vanish permanently.</span>
+              <span>Guest mode runs entirely in this browser. Progress will vanish if history is cleared.</span>
             </div>
           </div>
         </div>
@@ -573,36 +592,8 @@ export default function App() {
           <button onClick={() => { setActiveModal('settings'); setSidebarOpen(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-black/5 transition-colors text-sm font-medium">
             <Settings size={18} className="text-emerald-500" /> <span>Settings</span>
           </button>
-
-          <div className="pt-6">
-            <div className="flex items-center justify-between px-2 mb-2">
-              <span className="text-xs uppercase font-extrabold tracking-wider opacity-50">Your Boards</span>
-              <button onClick={() => setBoards([...boards, { id: 'b_'+Date.now(), name: `Board ${boards.length+1}`, isPinned: false, rowCount: 5 }])} className="text-amber-500 p-1 hover:bg-amber-500/10 rounded-md"><Plus size={16} /></button>
-            </div>
-            <div className="space-y-1 relative">
-              {boards.map((b) => (
-                <div key={b.id} className="relative group">
-                  <div onClick={() => { setActiveBoardId(b.id); setSidebarOpen(false); }} className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer text-sm font-medium transition-all ${activeBoardId === b.id ? (theme === 'night' ? 'bg-amber-500/20 text-amber-300' : 'bg-amber-100 text-amber-900') : 'hover:bg-black/5'}`}>
-                    <div className="flex items-center gap-2 truncate">
-                      {b.isPinned && <Pin size={13} className="text-amber-400 rotate-45 shrink-0" />}
-                      <span className="truncate">{b.name}</span>
-                    </div>
-                    <button onClick={(e) => { e.stopPropagation(); setBoardMenuOpen(boardMenuOpen === b.id ? null : b.id); }} className="p-1 rounded-md opacity-70 hover:opacity-100 hover:bg-black/10"><MoreVertical size={16} /></button>
-                  </div>
-                  {boardMenuOpen === b.id && (
-                    <div className={`absolute right-2 top-11 z-50 w-36 rounded-xl shadow-xl border p-1 text-xs ${theme === 'night' ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-stone-200 text-stone-900'}`}>
-                      <button onClick={() => { const nm = prompt('Rename:', b.name); if(nm) setBoards(prev => prev.map(item => item.id === b.id ? { ...item, name: nm } : item)); setBoardMenuOpen(null); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-black/5 flex items-center gap-2"><Edit2 size={13} /> <span>Rename</span></button>
-                      <button onClick={() => { setBoards(prev => prev.map(item => item.id === b.id ? { ...item, isPinned: !item.isPinned } : item)); setBoardMenuOpen(null); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-black/5 flex items-center gap-2"><Pin size={13} /> <span>{b.isPinned ? 'Unpin' : 'Pin'}</span></button>
-                      <button onClick={() => { if(boards.length > 1) { setBoards(bds => bds.filter(x => x.id !== b.id)); setActiveBoardId(boards[0].id); } setBoardMenuOpen(null); }} className="w-full text-left px-3 py-2 rounded-lg text-rose-500 hover:bg-rose-500/10 flex items-center gap-2"><Trash2 size={13} /> <span>Delete</span></button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
         
-        {/* Sign Out / Sign In Buttons in Sidebar */}
         <div className="p-4 border-t border-inherit space-y-2">
            {userProfile.isGuest && (
              <button onClick={() => { handleSignOut(); }} className="w-full flex items-center justify-center gap-3 px-3 py-3 rounded-xl text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors text-sm font-bold">
@@ -621,7 +612,6 @@ export default function App() {
           <button onClick={() => setSidebarOpen(true)} className={`p-2 rounded-xl active:scale-95 transition-all ${theme === 'night' ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-black/10 hover:bg-black/20 text-stone-900'}`}>
             <AlignLeft size={22} />
           </button>
-          {/* Graph Trigger */}
           <button onClick={() => setActiveModal('graph')} className="flex items-center gap-2 bg-gradient-to-r from-amber-500/20 to-orange-500/20 px-3 py-1.5 rounded-full border border-amber-500/30 backdrop-blur-md shadow-sm hover:scale-105 transition-transform cursor-pointer">
             <BarChart3 size={16} className="text-amber-400" />
             <span className="font-black text-amber-500 text-sm tracking-wide">{points} pts</span>
@@ -633,7 +623,6 @@ export default function App() {
              <Skull size={20} />
           </button>
 
-          {/* HORIZONTAL ADD BUTTON */}
           <button onClick={handleCreateTask} className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-rose-400 hover:from-amber-300 hover:to-rose-300 text-white shadow-lg active:scale-95 transition-all flex items-center gap-2 border-2 border-white/20 font-black text-sm">
             <Plus size={18} strokeWidth={3} />
             <span className="hidden sm:inline">Add Card</span>
@@ -648,18 +637,21 @@ export default function App() {
             
             {/* CENTRAL LEADERBOARD SPINE & ANGEL */}
             <div className="flex flex-col items-center shrink-0 select-none relative z-10 pt-2">
-              {/* Angel Trigger Ref (Using Custom Logo) */}
+              
+              {/* NEW ROUND, DETAILED CROWN SVG REPLACING THE SQUARE */}
               <div 
                 ref={angelRef}
                 onClick={() => setActiveModal('treasure')}
-                className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-tr from-amber-400 to-yellow-200 flex items-center justify-center shadow-[0_4px_20px_rgba(245,158,11,0.5)] border-2 border-yellow-100 z-10 relative cursor-pointer hover:scale-110 active:scale-95 transition-all overflow-hidden p-1.5"
+                className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-yellow-300 via-amber-400 to-yellow-600 flex items-center justify-center shadow-[0_0_25px_rgba(245,158,11,0.6)] border-4 border-yellow-200 z-10 relative cursor-pointer hover:scale-110 active:scale-95 transition-all overflow-hidden p-2.5"
               >
-                <img src="/icon-512.png" alt="Crown" className="w-full h-full object-contain opacity-90" />
+                <svg viewBox="0 0 24 24" fill="currentColor" className="w-full h-full text-amber-950 drop-shadow-md">
+                   <path d="M4 17L2 5l6.5 4.5L12 2l3.5 7.5L22 5l-2 12H4zm16 2c0 .6-.4 1-1 1H5c-.6 0-1-.4-1-1v-1h16v1z" />
+                </svg>
               </div>
 
               <div 
                 className="w-3.5 sm:w-4 rounded-full -mt-4 shadow-inner bg-gradient-to-b from-amber-400 via-rose-500 via-purple-600 via-blue-600 to-cyan-500 transition-all duration-300 z-0 relative"
-                style={{ height: `${(activeBoard.rowCount * 95) + 30}px` }}
+                style={{ height: `${(activeBoard.rowCount * 115) + 30}px` }}
               />
 
               <div className="flex flex-col items-center gap-1.5 pt-2 relative z-10">
@@ -669,30 +661,42 @@ export default function App() {
             </div>
 
             {/* TASK ROWS */}
-            <div className="flex-1 flex flex-col pt-12 space-y-1">
+            <div className="flex-1 flex flex-col pt-12">
               {Array.from({ length: activeBoard.rowCount }).map((_, idx) => {
                 const rowId = idx + 1;
                 const rowStyle = DYNAMIC_COLORS[Math.min(idx, DYNAMIC_COLORS.length - 1)];
                 const rowTasks = tasks.filter(t => t.boardId === activeBoardId && t.rowId === rowId);
+                const isRowLocked = lockedRows.includes(rowId);
+                
+                // Dimming Logic for rows being held vs not
+                const isRowBeingDragged = globalDragState === 'row' && draggedRowId === rowId;
+                const isDimmedRow = globalDragState === 'row' && draggedRowId !== rowId;
 
                 return (
-                  <div key={rowId} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDropOnRow(e, rowId)}
-                    className="min-h-[90px] flex items-stretch py-1.5 transition-all duration-300 border border-transparent rounded-2xl group"
+                  <div key={rowId} onDragOver={(e) => { e.preventDefault(); if (globalDragState === 'row' && !isRowLocked) setRowDragHoverId(rowId); }} onDragLeave={() => setRowDragHoverId(null)} onDrop={(e) => handleDropOnRow(e, rowId)}
+                    className={`min-h-[110px] flex items-stretch py-3 transition-all duration-500 border-b-2 border-dashed ${theme === 'night' ? 'border-white/10' : 'border-stone-300/50'} group ${isRowBeingDragged ? 'opacity-50 brightness-110 scale-[0.98]' : ''} ${isDimmedRow ? 'opacity-40 brightness-75' : 'opacity-100'} ${rowDragHoverId === rowId ? 'bg-white/5 rounded-2xl' : ''}`}
                   >
                     <div className="flex-1 flex flex-wrap gap-2 sm:gap-3 items-center min-h-[75px] pl-2 sm:pl-3 relative">
                       {rowTasks.map((task, index) => (
                         <TaskCard 
                           key={task.id} task={task} colorObj={rowStyle} index={index}
                           isDragged={draggedTaskId === task.id} isGrayGhost={grayGhostId === task.id} isDragOver={dragOverTaskId === task.id} isAnimating={animatingTasks.includes(task.id)}
-                          onClick={() => setEditingTask(task)} onSlash={() => setSlashingTask(task)} onDuplicate={(e) => { e.stopPropagation(); handleDuplicateTask(task); }}
-                          onDragStart={handleDragStartTask} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (draggedTaskId && draggedTaskId !== task.id) setDragOverTaskId(task.id); }} onDragEnd={handleDragEnd}
+                          isDimmed={globalDragState === 'card' && draggedTaskId !== task.id && draggedRowId !== task.rowId}
+                          onClick={() => setEditingTask(task)} onSlash={() => setSlashingTask(task)} onDuplicate={(e) => { e.stopPropagation(); handleDuplicateTask(task); }} onToggleLock={toggleCardLock}
+                          onDragStart={handleDragStartTask} onDragOver={(e) => handleDragOverTask(e, task.id)} onDragLeave={handleDragLeaveTask} onDragEnd={handleDragEnd}
                         />
                       ))}
                     </div>
-                    <div draggable onDragStart={(e) => handleDragStartRow(e, rowId)} onDragEnd={handleDragEnd} className="w-8 shrink-0 flex flex-col items-center justify-center opacity-0 group-hover:opacity-40 hover:!opacity-100 cursor-grab px-2 transition-opacity">
-                      <div className="flex gap-1 mb-1"><div className="w-1 h-1 rounded-full bg-current"/><div className="w-1 h-1 rounded-full bg-current"/></div>
-                      <div className="flex gap-1 mb-1"><div className="w-1 h-1 rounded-full bg-current"/><div className="w-1 h-1 rounded-full bg-current"/></div>
-                      <div className="flex gap-1"><div className="w-1 h-1 rounded-full bg-current"/><div className="w-1 h-1 rounded-full bg-current"/></div>
+                    {/* Row Handle & Lock */}
+                    <div className="w-10 shrink-0 flex flex-col items-center justify-center opacity-30 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => toggleRowLock(rowId)} className="mb-3 hover:scale-110 transition-transform bg-black/10 p-1.5 rounded-md" title={isRowLocked ? "Unlock Row" : "Lock Row"}>
+                        {isRowLocked ? <Lock size={14} className="text-rose-400"/> : <Unlock size={14} className="text-current"/>}
+                      </button>
+                      <div draggable={!isRowLocked} onDragStart={(e) => handleDragStartRow(e, rowId)} onDragEnd={handleDragEnd} className={`${isRowLocked ? 'cursor-not-allowed opacity-30' : 'cursor-grab'} flex flex-col items-center p-2 bg-black/5 hover:bg-black/10 rounded-lg transition-colors`}>
+                        <div className="flex gap-1 mb-1"><div className="w-1.5 h-1.5 rounded-full bg-current"/><div className="w-1.5 h-1.5 rounded-full bg-current"/></div>
+                        <div className="flex gap-1 mb-1"><div className="w-1.5 h-1.5 rounded-full bg-current"/><div className="w-1.5 h-1.5 rounded-full bg-current"/></div>
+                        <div className="flex gap-1"><div className="w-1.5 h-1.5 rounded-full bg-current"/><div className="w-1.5 h-1.5 rounded-full bg-current"/></div>
+                      </div>
                     </div>
                   </div>
                 );
@@ -700,7 +704,7 @@ export default function App() {
 
               {/* NO PRIORITY */}
               <div className="mt-8 pt-4">
-                <div onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDropOnRow(e, 'forgotten')} className={`rounded-3xl p-4 sm:p-5 border-2 border-dashed transition-all ${theme === 'night' ? 'bg-slate-900/40 border-slate-600/50' : 'bg-white/40 border-stone-300/60'}`}>
+                <div onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDropOnRow(e, 'forgotten')} className={`rounded-3xl p-4 sm:p-5 border-2 border-dashed transition-all ${theme === 'night' ? 'bg-slate-900/40 border-slate-600/50' : 'bg-white/40 border-stone-300/60'} ${globalDragState === 'row' ? 'opacity-40 brightness-75' : ''}`}>
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 rounded-full bg-slate-400"></div>
@@ -711,8 +715,9 @@ export default function App() {
                     {tasks.filter(t => t.boardId === activeBoardId && t.rowId === 'forgotten').map((task, index) => (
                       <TaskCard key={task.id} task={task} colorObj={FORGOTTEN_COLOR} index={index} 
                         isDragged={draggedTaskId === task.id} isGrayGhost={grayGhostId === task.id} isDragOver={dragOverTaskId === task.id} isAnimating={animatingTasks.includes(task.id)} 
-                        onClick={() => setEditingTask(task)} onSlash={() => setSlashingTask(task)} onDuplicate={(e) => { e.stopPropagation(); handleDuplicateTask(task); }}
-                        onDragStart={handleDragStartTask} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (draggedTaskId && draggedTaskId !== task.id) setDragOverTaskId(task.id); }} onDragEnd={handleDragEnd}/>
+                        isDimmed={globalDragState === 'card' && draggedTaskId !== task.id}
+                        onClick={() => setEditingTask(task)} onSlash={() => setSlashingTask(task)} onDuplicate={(e) => { e.stopPropagation(); handleDuplicateTask(task); }} onToggleLock={toggleCardLock}
+                        onDragStart={handleDragStartTask} onDragOver={(e) => handleDragOverTask(e, task.id)} onDragLeave={handleDragLeaveTask} onDragEnd={handleDragEnd}/>
                     ))}
                     {tasks.filter(t => t.boardId === activeBoardId && t.rowId === 'forgotten').length === 0 && <div className="w-full text-center py-4 opacity-50 text-xs italic">Drag tasks here to remove priority</div>}
                   </div>
@@ -754,17 +759,11 @@ export default function App() {
                <p className="text-center text-sm font-bold">No spirits wander here.</p>
              </div>
           )}
-
           {deletedTasks.map((t) => (
             <div key={t.id} className="relative w-full h-[85px] bg-zinc-800 border-2 border-zinc-700 p-3 flex flex-col justify-between text-zinc-400 broken-bottom overflow-hidden shadow-black shadow-inner">
                <div className="flex justify-between items-start">
                  <h4 className="font-black text-sm truncate w-[70%] text-zinc-300 line-through">{t.title}</h4>
-                 <button 
-                   onClick={() => handleRestoreTask(t)} 
-                   className="flex items-center gap-1 text-[10px] uppercase font-bold text-cyan-400 bg-cyan-900/30 px-2 py-1 rounded hover:bg-cyan-800/50 border border-cyan-800 transition-colors z-10 relative"
-                 >
-                   <ShieldPlus size={12} /> Restore
-                 </button>
+                 <button onClick={() => handleRestoreTask(t)} className="flex items-center gap-1 text-[10px] uppercase font-bold text-cyan-400 bg-cyan-900/30 px-2 py-1 rounded hover:bg-cyan-800/50 border border-cyan-800 transition-colors z-10 relative"><ShieldPlus size={12} /> Restore</button>
                </div>
                <p className="text-[11px] opacity-70 truncate">{t.subtitle}</p>
             </div>
@@ -795,7 +794,7 @@ export default function App() {
         </div>
       )}
 
-      {/* TASK EDIT DRAWER (With Actual Calendar Picker) */}
+      {/* TASK EDIT DRAWER */}
       {editingTask && (
         <div className="fixed inset-0 z-50 flex items-center justify-center md:justify-end">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-xs transition-opacity" onClick={() => { if(!editingTask.isNew) setEditingTask(null); else handleDeleteTask(editingTask.id); }} />
@@ -827,15 +826,12 @@ export default function App() {
                 <textarea rows={6} value={editingTask.description || ''} onChange={(e) => setEditingTask({ ...editingTask, description: e.target.value })} placeholder="Description..." className={`w-full p-4 rounded-2xl bg-black/5 border border-slate-500/20 focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm leading-relaxed resize-none ${theme === 'night' ? 'placeholder-slate-500 text-white' : 'placeholder-stone-400 text-stone-900'}`}/>
               </div>
 
-              {/* Actual Calendar Input */}
               <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/20 mb-4">
                  <label className="flex items-center gap-2 text-xs font-bold text-blue-500 mb-2 uppercase tracking-wide">
                    <Clock size={14}/> Set Reminder Date & Time
                  </label>
                  <input 
-                   type="datetime-local" 
-                   value={editingTask.reminder || ''} 
-                   onChange={(e) => setEditingTask({...editingTask, reminder: e.target.value})} 
+                   type="datetime-local" value={editingTask.reminder || ''} onChange={(e) => setEditingTask({...editingTask, reminder: e.target.value})} 
                    className={`w-full bg-black/10 dark:bg-black/20 p-2.5 rounded-lg text-sm font-medium outline-none border border-transparent focus:border-blue-500 text-blue-500 cursor-pointer ${theme === 'night' ? 'color-scheme-dark' : ''}`}
                  />
               </div>
@@ -846,7 +842,7 @@ export default function App() {
                 <Trash2 size={20} />
               </button>
               
-              {!editingTask.isNew && (
+              {!editingTask.isNew && !editingTask.isLocked && (
                 <button onClick={() => { setSlashingTask(editingTask); setEditingTask(null); }} className="p-3.5 rounded-2xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 transition-colors shadow-sm border border-amber-500/20 group" title="Complete Task">
                   <Sword size={20} className="group-hover:scale-110 group-hover:rotate-12 transition-transform" />
                 </button>
@@ -854,62 +850,6 @@ export default function App() {
 
               <button onClick={() => handleSaveTask(editingTask)} className="flex-1 py-3.5 px-6 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-stone-950 font-black text-sm shadow-xl active:scale-98 transition-all flex items-center justify-center gap-2"><Check size={18} strokeWidth={2.5} /> <span>Save Card</span></button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ACCOUNT MODAL WITH AVATAR PICKER */}
-      {activeModal === 'account' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-xs" onClick={() => setActiveModal(null)} />
-          <div className={`relative w-full max-w-md ${theme === 'night' ? 'bg-slate-900 text-white' : 'bg-white text-stone-900'} p-6 rounded-3xl shadow-2xl border border-slate-700/50`}>
-            <div className="flex justify-between items-center mb-5"><h3 className="font-extrabold text-lg flex items-center gap-2"><ImageIcon size={20} className="text-amber-500" /> <span>Profile & Avatars</span></h3><button onClick={() => setActiveModal(null)} className="p-1 rounded-lg hover:bg-black/10"><X size={18} /></button></div>
-            
-            <div className="mb-5 flex flex-col items-center gap-4">
-              <img src={userProfile.avatar} alt="Profile" className="w-24 h-24 rounded-full object-cover ring-4 ring-amber-500 shadow-xl" />
-              
-              <div className="w-full">
-                <label className="text-xs uppercase font-extrabold opacity-50 mb-2 block text-center">Choose an Avatar</label>
-                <div className="flex justify-center gap-3">
-                  {AVATARS.map((av, idx) => (
-                    <img 
-                      key={idx} 
-                      src={av} 
-                      alt={`Avatar option ${idx + 1}`} 
-                      onClick={() => {
-                        const newProf = { ...userProfile, avatar: av };
-                        setUserProfile(newProf);
-                        localStorage.setItem('workflow_user', JSON.stringify(newProf));
-                      }}
-                      className={`w-12 h-12 rounded-full object-cover cursor-pointer hover:scale-110 transition-all border-2 ${userProfile.avatar === av ? 'ring-2 ring-amber-400 border-white' : 'border-transparent opacity-70 hover:opacity-100'}`}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" id="avatar-upload" />
-              <label htmlFor="avatar-upload" className="cursor-pointer flex items-center gap-2 px-4 py-2 bg-black/10 dark:bg-white/10 rounded-xl text-xs font-semibold hover:bg-black/20 dark:hover:bg-white/20 transition-all"><UploadCloud size={16} /> Custom Upload</label>
-            </div>
-            
-            <div className="mb-6"><label className="text-xs uppercase font-extrabold opacity-50 mb-1 block">Display Name</label><input type="text" value={userProfile.name} onChange={(e) => { const newProf = { ...userProfile, name: e.target.value }; setUserProfile(newProf); localStorage.setItem('workflow_user', JSON.stringify(newProf)); }} className="w-full px-4 py-2.5 rounded-xl bg-black/5 dark:bg-white/5 border border-slate-500/20 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm"/></div>
-            <button onClick={() => setActiveModal(null)} className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-xl text-sm">Done</button>
-          </div>
-        </div>
-      )}
-
-      {/* SETTINGS MODAL */}
-      {activeModal === 'settings' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-xs" onClick={() => setActiveModal(null)} />
-          <div className={`relative w-full max-w-md ${theme === 'night' ? 'bg-slate-900 text-white' : 'bg-white text-stone-900'} p-6 rounded-3xl shadow-2xl border border-slate-700/50`}>
-            <div className="flex justify-between items-center mb-5"><h3 className="font-extrabold text-lg flex items-center gap-2"><Settings size={20} className="text-emerald-500" /> <span>Settings</span></h3><button onClick={() => setActiveModal(null)} className="p-1 rounded-lg hover:bg-black/10"><X size={18} /></button></div>
-            <div className="space-y-4 mb-6">
-              <div className="flex items-center justify-between p-3 rounded-2xl bg-black/5 dark:bg-white/5">
-                <div><h5 className="font-bold text-sm">Theme Mode</h5><p className="text-[11px] opacity-60">Night Sky or Sunrise Cloud</p></div>
-                <button onClick={() => setTheme(t => t === 'night' ? 'day' : 'night')} className="p-2.5 rounded-xl bg-black/10 dark:bg-white/10">{theme === 'night' ? <Moon size={18} /> : <Sun size={18} />}</button>
-              </div>
-            </div>
-            <button onClick={() => setActiveModal(null)} className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-sm">Close</button>
           </div>
         </div>
       )}
@@ -931,7 +871,6 @@ export default function App() {
             <div className="flex-1 p-6 z-20 flex items-end justify-between gap-2 overflow-x-auto">
                {pointsHistory.map((day, idx) => {
                  const maxVal = Math.max(...pointsHistory.map(d => d.value));
-                 // If maxVal is 0, render empty bars. Otherwise calculate height.
                  const heightPercent = maxVal === 0 ? 0 : (day.value / maxVal) * 100;
                  return (
                    <div key={idx} className="flex flex-col items-center justify-end h-full flex-1 min-w-[50px] group">
@@ -946,7 +885,7 @@ export default function App() {
         </div>
       )}
 
-      {/* PLAIN LIST COMPLETED TASKS (Angel Modal) */}
+      {/* COMPLETED TASKS (Angel/Crown Modal WITH BANDAGE RESTORE) */}
       {activeModal === 'treasure' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setActiveModal(null)} />
@@ -954,7 +893,7 @@ export default function App() {
             
             <div className={`flex justify-between items-center p-6 border-b ${theme === 'night' ? 'border-amber-500/20 bg-black/20' : 'border-amber-500/10 bg-amber-50/50'}`}>
               <h3 className="font-black text-xl text-amber-500 flex items-center gap-2">
-                <img src="/icon-512.png" alt="Crown" className="w-6 h-6 object-contain" />
+                <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path d="M4 17L2 5l6.5 4.5L12 2l3.5 7.5L22 5l-2 12H4zm16 2c0 .6-.4 1-1 1H5c-.6 0-1-.4-1-1v-1h16v1z"/></svg>
                 Completed Quests
               </h3>
               <button onClick={() => setActiveModal(null)} className="p-2 rounded-full hover:bg-black/10 transition-colors"><X size={20} /></button>
@@ -968,9 +907,14 @@ export default function App() {
                  </div>
                ) : (
                  completedTasks.map((ct, idx) => (
-                   <div key={idx} className={`flex flex-col p-4 rounded-2xl border ${theme === 'night' ? 'bg-black/20 border-slate-700/50' : 'bg-black/5 border-stone-200'}`}>
-                      <h5 className="font-black text-sm">{ct.title || 'Untitled Task'}</h5>
-                      <p className="text-xs font-medium opacity-70 mt-1">{ct.subtitle}</p>
+                   <div key={idx} className={`flex justify-between items-center p-4 rounded-2xl border ${theme === 'night' ? 'bg-black/20 border-slate-700/50' : 'bg-black/5 border-stone-200'}`}>
+                      <div>
+                        <h5 className="font-black text-sm">{ct.title || 'Untitled Task'}</h5>
+                        <p className="text-xs font-medium opacity-70 mt-1">{ct.subtitle}</p>
+                      </div>
+                      <button onClick={() => handleUndoTask(ct)} className="flex items-center gap-1 text-[10px] uppercase font-bold text-amber-600 bg-amber-500/20 px-3 py-2 rounded-xl hover:bg-amber-500/40 border border-amber-500/30 transition-colors">
+                        <Bandage size={14} /> Restore
+                      </button>
                    </div>
                  ))
                )}
@@ -983,24 +927,20 @@ export default function App() {
 }
 
 // TASK CARD
-function TaskCard({ task, colorObj, index = 0, isDragged, isGrayGhost, isDragOver, isAnimating, onClick, onSlash, onDuplicate, onDragStart, onDragOver, onDragEnd }) {
+function TaskCard({ task, colorObj, index = 0, isDragged, isGrayGhost, isDragOver, isAnimating, isDimmed, onClick, onSlash, onDuplicate, onToggleLock, onDragStart, onDragOver, onDragLeave, onDragEnd }) {
   let bgColor, borderColor, textColor;
 
   const isHeldGray = isGrayGhost;
   
   if (isHeldGray) {
-    bgColor = '#64748b';
-    borderColor = '#475569';
-    textColor = 'text-white';
+    bgColor = '#64748b'; borderColor = '#475569'; textColor = 'text-white';
   } else if (colorObj.hue !== undefined) {
     const lightness = Math.max(20, colorObj.baseL - (index * 4));
     bgColor = `hsl(${colorObj.hue}, ${colorObj.sat}%, ${lightness}%)`;
     borderColor = `hsl(${colorObj.hue}, ${colorObj.sat}%, ${Math.max(10, lightness - 10)}%)`;
     textColor = lightness > 60 ? 'text-stone-900' : 'text-white';
   } else {
-    bgColor = '#1e293b'; 
-    borderColor = '#334155';
-    textColor = 'text-white';
+    bgColor = '#1e293b'; borderColor = '#334155'; textColor = 'text-white';
   }
 
   if (isAnimating) {
@@ -1020,25 +960,35 @@ function TaskCard({ task, colorObj, index = 0, isDragged, isGrayGhost, isDragOve
 
   if (isDragged) return <div className="hidden" />;
 
+  const dimClass = isDimmed ? 'opacity-40 brightness-75 scale-95' : 'opacity-100 scale-100';
+
   return (
     <div
-      draggable
-      onDragStart={(e) => onDragStart(e, task.id)}
+      draggable={!task.isLocked}
+      onDragStart={(e) => onDragStart(e, task)}
       onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
       onDragEnd={onDragEnd}
       onClick={onClick}
       style={{ backgroundColor: bgColor, borderColor: borderColor }}
-      className={`relative w-[170px] shrink-0 h-[75px] rounded-2xl p-2.5 cursor-pointer shadow-md hover:shadow-xl transition-all duration-300 ease-out flex flex-col justify-between select-none ${textColor} border-2 group ${isDragOver ? 'ml-[180px] scale-95 opacity-80' : 'scale-100'}`}
+      className={`relative w-[170px] shrink-0 h-[75px] rounded-2xl p-2.5 cursor-pointer shadow-md hover:shadow-xl transition-all duration-300 ease-out flex flex-col justify-between select-none ${textColor} border-2 group ${dimClass} ${isDragOver ? 'ml-[180px] scale-95 opacity-80' : ''} ${task.isLocked ? 'opacity-70' : ''}`}
     >
       <div className="flex items-start justify-between gap-1">
-        <h4 className="font-black text-sm tracking-tight truncate w-[60%]">{task.title}</h4>
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
-          <button onClick={onDuplicate} className="shrink-0 p-1 bg-black/10 hover:bg-black/20 rounded-md transition-colors" title="Duplicate">
-            <Copy size={12} className="text-current" />
+        <h4 className="font-black text-sm tracking-tight truncate w-[50%]">{task.title}</h4>
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity mt-0.5">
+          <button onClick={(e) => onToggleLock(e, task.id)} className="shrink-0 p-1 bg-black/10 hover:bg-black/20 rounded-md transition-colors" title={task.isLocked ? "Unlock" : "Lock"}>
+            {task.isLocked ? <Lock size={12} className="text-rose-400" /> : <Unlock size={12} className="text-current" />}
           </button>
-          <button onClick={(e) => { e.stopPropagation(); onSlash(task); }} className="shrink-0 p-1 bg-black/10 hover:bg-black/20 rounded-md transition-colors" title="Complete">
-            <Sword size={12} className="text-current group-hover:rotate-12 transition-transform" />
-          </button>
+          {!task.isLocked && (
+            <>
+              <button onClick={onDuplicate} className="shrink-0 p-1 bg-black/10 hover:bg-black/20 rounded-md transition-colors" title="Duplicate">
+                <Copy size={12} className="text-current" />
+              </button>
+              <button onClick={(e) => { e.stopPropagation(); onSlash(task); }} className="shrink-0 p-1 bg-black/10 hover:bg-black/20 rounded-md transition-colors" title="Complete">
+                <Sword size={12} className="text-current group-hover:rotate-12 transition-transform" />
+              </button>
+            </>
+          )}
         </div>
       </div>
 

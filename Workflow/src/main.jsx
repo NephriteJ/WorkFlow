@@ -369,7 +369,7 @@ export default function App() {
         dragTimeoutRef.current = setTimeout(() => {
           setDragOverTaskId(targetTaskId);
           dragTimeoutRef.current = null;
-        }, 1000); 
+        }, 500); 
       }
     }
   };

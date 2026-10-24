@@ -36,15 +36,19 @@ const DYNAMIC_COLORS = [
   { hue: 190, sat: 95, baseL: 45, text: 'text-white' },       
   { hue: 170, sat: 85, baseL: 40, text: 'text-white' },       
 ];
-
 const FORGOTTEN_COLOR = { hue: 215, sat: 15, baseL: 40, text: 'text-slate-100' };
+const AVATARS = ['/pfp1.jpeg', '/pfp2.jpeg', '/pfp3.jpeg', '/pfp4.jpeg'];
 
-const AVATARS = [
-  '/pfp1.jpeg',
-  '/pfp2.jpeg',
-  '/pfp3.jpeg',
-  '/pfp4.jpeg'
-];
+// SAFE LOCAL STORAGE PARSER TO PREVENT CRASHES
+const safeLoad = (key, fallback) => {
+  try {
+    const saved = localStorage.getItem(key);
+    return saved ? JSON.parse(saved) : fallback;
+  } catch (e) {
+    console.error(`Error loading ${key}:`, e);
+    return fallback;
+  }
+};
 
 export default function App() {
   // --- AUTH & INTRO STATE ---
@@ -52,12 +56,9 @@ export default function App() {
   const [introStage, setIntroStage] = useState(0); 
   const [theme, setTheme] = useState('night'); 
 
-  const [userProfile, setUserProfile] = useState(() => {
-    const saved = localStorage.getItem('workflow_user');
-    return saved ? JSON.parse(saved) : { 
-      name: 'Guest Explorer', email: 'Temporary session', avatar: AVATARS[0], isGuest: true, googleId: null 
-    };
-  });
+  const [userProfile, setUserProfile] = useState(() => safeLoad('workflow_user', { 
+    name: 'Guest Explorer', email: 'Temporary session', avatar: AVATARS[0], isGuest: true, googleId: null 
+  }));
   
   // --- COIN TRACKING ---
   const [points, setPoints] = useState(() => {
@@ -66,9 +67,8 @@ export default function App() {
   });
   
   const [pointsHistory, setPointsHistory] = useState(() => {
-    const saved = localStorage.getItem('workflow_history');
-    if (saved) return JSON.parse(saved);
-    
+    const loaded = safeLoad('workflow_history', null);
+    if (loaded) return loaded;
     const history = [];
     const today = new Date();
     for(let i = 6; i >= 0; i--) {
@@ -76,8 +76,7 @@ export default function App() {
       d.setDate(d.getDate() - i);
       const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
       const dayNum = d.getDate();
-      const dateKey = d.toLocaleDateString('en-US');
-      history.push({ dateKey, label: `${dayName} ${dayNum}`, value: 0 });
+      history.push({ dateKey: d.toLocaleDateString('en-US'), label: `${dayName} ${dayNum}`, value: 0 });
     }
     return history;
   });
@@ -87,27 +86,13 @@ export default function App() {
   const [activeBoardId, setActiveBoardId] = useState('b1');
   const [boardMenuOpen, setBoardMenuOpen] = useState(null);
 
-  const [tasks, setTasks] = useState(() => {
-    const saved = localStorage.getItem('workflow_tasks');
-    return saved ? JSON.parse(saved) : [
-      { id: 't1', boardId: 'b1', title: 'Title', subtitle: 'Sub title', description: 'Description', rowId: 1, reminder: null, isLocked: false }
-    ];
-  });
+  const [tasks, setTasks] = useState(() => safeLoad('workflow_tasks', [
+    { id: 't1', boardId: 'b1', title: 'Title', subtitle: 'Sub title', description: 'Description', rowId: 1, reminder: null, isLocked: false }
+  ]));
   
-  const [lockedRows, setLockedRows] = useState(() => {
-    const saved = localStorage.getItem('workflow_locked_rows');
-    return saved ? JSON.parse(saved) : [];
-  });
-  
-  const [deletedTasks, setDeletedTasks] = useState(() => {
-    const saved = localStorage.getItem('workflow_deleted');
-    return saved ? JSON.parse(saved) : [];
-  });
-  
-  const [completedTasks, setCompletedTasks] = useState(() => {
-    const saved = localStorage.getItem('workflow_completed');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [lockedRows, setLockedRows] = useState(() => safeLoad('workflow_locked_rows', []));
+  const [deletedTasks, setDeletedTasks] = useState(() => safeLoad('workflow_deleted', []));
+  const [completedTasks, setCompletedTasks] = useState(() => safeLoad('workflow_completed', []));
 
   // --- UI STATE ---
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -119,7 +104,7 @@ export default function App() {
   const [lastScrollY, setLastScrollY] = useState(0);
 
   // --- DRAG & DROP WITH GLITCH PREVENTION ---
-  const [globalDragState, setGlobalDragState] = useState(null); // 'card' or 'row'
+  const [globalDragState, setGlobalDragState] = useState(null); 
   const [draggedTaskId, setDraggedTaskId] = useState(null);
   const [grayGhostId, setGrayGhostId] = useState(null); 
   const [dragOverTaskId, setDragOverTaskId] = useState(null); 
@@ -127,7 +112,7 @@ export default function App() {
   const [isHoveringTrash, setIsHoveringTrash] = useState(false);
   const [rowDragHoverId, setRowDragHoverId] = useState(null); 
   
-  const dragTimeoutRef = useRef(null); // Used to wait 1s before giggling/shifting
+  const dragTimeoutRef = useRef(null);
   const angelRef = useRef(null);
 
   const [slashingTask, setSlashingTask] = useState(null);
@@ -147,9 +132,7 @@ export default function App() {
   useEffect(() => {
     if (activeModal || editingTask || slashingTask || graveyardOpen || sidebarOpen) {
       document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'auto';
-    }
+    } else { document.body.style.overflow = 'auto'; }
     return () => { document.body.style.overflow = 'auto'; };
   }, [activeModal, editingTask, slashingTask, graveyardOpen, sidebarOpen]);
 
@@ -178,8 +161,7 @@ export default function App() {
             if (t.boardId === activeBoardId && typeof t.rowId === 'number' && t.rowId > i) return { ...t, rowId: t.rowId - 1 };
             return t;
           });
-          tasksChanged = true;
-          break;
+          tasksChanged = true; break;
         }
       }
     }
@@ -209,21 +191,14 @@ export default function App() {
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
-      
       const profile = {
-        ...userProfile, 
-        isGuest: false,
-        name: user.displayName || 'Google User',
-        email: user.email,
-        avatar: user.photoURL || AVATARS[0],
-        googleId: user.uid
+        ...userProfile, isGuest: false, name: user.displayName || 'Google User',
+        email: user.email, avatar: user.photoURL || AVATARS[0], googleId: user.uid
       };
-      
       setUserProfile(profile);
       localStorage.setItem('workflow_auth', 'true');
       localStorage.setItem('workflow_user', JSON.stringify(profile));
-      setCurrentView('transitioning');
-      setTimeout(() => setCurrentView('main'), 600);
+      setCurrentView('transitioning'); setTimeout(() => setCurrentView('main'), 600);
     } catch (error) {
       console.error("Google Sign-In Error:", error);
       alert("Sign in failed. Please try again.");
@@ -236,16 +211,12 @@ export default function App() {
     setUserProfile(profile);
     localStorage.setItem('workflow_auth', 'true');
     localStorage.setItem('workflow_user', JSON.stringify(profile));
-    setCurrentView('transitioning');
-    setTimeout(() => setCurrentView('main'), 600);
+    setCurrentView('transitioning'); setTimeout(() => setCurrentView('main'), 600);
   };
 
   const handleSignOut = () => {
-    localStorage.removeItem('workflow_auth');
-    localStorage.removeItem('workflow_user');
-    setCurrentView('splash');
-    setIntroStage(0);
-    setSidebarOpen(false);
+    localStorage.removeItem('workflow_auth'); localStorage.removeItem('workflow_user');
+    setCurrentView('splash'); setIntroStage(0); setSidebarOpen(false);
   };
 
   // --- TASK & LOCK MANAGEMENT ---
@@ -325,9 +296,7 @@ export default function App() {
   const handleCompleteTask = () => {
     if (!slashingTask || slashingTask.isLocked) return;
     let earnedPoints = 1;
-    if (slashingTask.rowId !== 'forgotten') {
-      earnedPoints = Math.max(10 - 2 * (parseInt(slashingTask.rowId) - 1), 1);
-    }
+    if (slashingTask.rowId !== 'forgotten') earnedPoints = Math.max(10 - 2 * (parseInt(slashingTask.rowId) - 1), 1);
     
     spawnFlyingCoins();
     setTimeout(() => {
@@ -337,7 +306,7 @@ export default function App() {
     }, 600);
 
     setAnimatingTasks(prev => [...prev, slashingTask.id]);
-    setCompletedTasks(prev => [{ ...slashingTask, earnedPoints, completedAt: Date.now() }, ...prev]);
+    setCompletedTasks(prev => [{ ...slashingTask, earnedPoints, completedAt: Date.now() }, ...(prev || [])]);
     setSlashingTask(null);
 
     setTimeout(() => {
@@ -346,12 +315,13 @@ export default function App() {
     }, 600);
   };
 
-  // Restores slashed task from the Angel/Completed list using the bandage button
+  // SAFEGUARD ADDED HERE FOR THE CROWN MODAL
   const handleUndoTask = (completedTask) => {
-    setPoints(p => Math.max(0, p - completedTask.earnedPoints));
-    updateCalendarPoints(-completedTask.earnedPoints); 
+    if (!completedTask || !completedTask.id) return;
+    setPoints(p => Math.max(0, p - (completedTask.earnedPoints || 0)));
+    updateCalendarPoints(-(completedTask.earnedPoints || 0)); 
     
-    setCompletedTasks(prev => prev.filter(t => t.id !== completedTask.id));
+    setCompletedTasks(prev => (prev || []).filter(t => t.id !== completedTask.id));
     const restoredTask = { ...completedTask };
     delete restoredTask.earnedPoints; delete restoredTask.completedAt;
     
@@ -364,10 +334,7 @@ export default function App() {
 
   // --- DRAG AND DROP HANDLERS WITH GLITCH/DELAY FIX ---
   const handleDragStartTask = (e, task) => {
-    if (task.isLocked || lockedRows.includes(task.rowId)) {
-      e.preventDefault();
-      return;
-    }
+    if (task.isLocked || lockedRows.includes(task.rowId)) { e.preventDefault(); return; }
     e.dataTransfer.setData('text/plain', task.id); 
     e.dataTransfer.effectAllowed = 'move';
     setGlobalDragState('card');
@@ -376,14 +343,17 @@ export default function App() {
   };
 
   const handleDragStartRow = (e, rowId) => {
-    if (lockedRows.includes(rowId)) {
-      e.preventDefault();
-      return;
-    }
+    if (lockedRows.includes(rowId)) { e.preventDefault(); return; }
     e.stopPropagation(); 
     setGlobalDragState('row');
     setDraggedRowId(rowId); 
     e.dataTransfer.setData('text/rowId', rowId.toString());
+
+    // ROW "PLATE" VISUAL FIX: Tells the browser to grab the entire row instead of just the button
+    const rowElement = e.currentTarget.closest('.row-container-drag');
+    if (rowElement) {
+      e.dataTransfer.setDragImage(rowElement, 30, 30);
+    }
   };
 
   const handleDragEnd = () => {
@@ -395,7 +365,6 @@ export default function App() {
   const handleDragOverTask = (e, targetTaskId) => {
     e.preventDefault(); e.stopPropagation();
     if (draggedTaskId && draggedTaskId !== targetTaskId) {
-      // 1-second delay before moving things to stop the rapid giggling glitch
       if (!dragTimeoutRef.current) {
         dragTimeoutRef.current = setTimeout(() => {
           setDragOverTaskId(targetTaskId);
@@ -415,11 +384,9 @@ export default function App() {
   const handleDropOnRow = (e, targetRowId) => {
     e.preventDefault(); e.stopPropagation();
     if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
-    
     if (lockedRows.includes(targetRowId)) {
       triggerNotification("Target row is locked.");
-      handleDragEnd();
-      return;
+      handleDragEnd(); return;
     }
 
     const taskId = e.dataTransfer.getData('text/plain');
@@ -436,9 +403,7 @@ export default function App() {
             const targetIdx = newTasks.findIndex(t => t.id === dragOverTaskId);
             if (targetIdx > -1) newTasks.splice(targetIdx, 0, draggedTask);
             else newTasks.push(draggedTask);
-          } else {
-            newTasks.push(draggedTask);
-          }
+          } else newTasks.push(draggedTask);
         }
         return newTasks;
       });
@@ -465,10 +430,7 @@ export default function App() {
   const handleRemoveRow = () => {
     if (activeBoard.rowCount <= 1) return;
     const oldRowCount = activeBoard.rowCount; const newRowCount = oldRowCount - 1;
-    if (lockedRows.includes(oldRowCount)) {
-       triggerNotification("Cannot remove a locked row.");
-       return;
-    }
+    if (lockedRows.includes(oldRowCount)) { triggerNotification("Cannot remove a locked row."); return; }
     setTasks(prev => prev.map(t => {
       if (t.boardId === activeBoardId && t.rowId === oldRowCount) return { ...t, rowId: newRowCount };
       return t;
@@ -659,7 +621,6 @@ export default function App() {
                 {activeBoard.rowCount > 1 && <button onClick={handleRemoveRow} className={`w-8 h-8 rounded-full flex items-center justify-center border hover:scale-110 active:scale-90 transition-all ${theme === 'night' ? 'bg-rose-500/20 border-rose-500/40 text-rose-400' : 'bg-rose-100 border-rose-300 text-rose-700'}`}><MinusCircle size={16} /></button>}
               </div>
             </div>
-
             {/* TASK ROWS */}
             <div className="flex-1 flex flex-col pt-12">
               {Array.from({ length: activeBoard.rowCount }).map((_, idx) => {
@@ -673,8 +634,11 @@ export default function App() {
                 const isDimmedRow = globalDragState === 'row' && draggedRowId !== rowId;
 
                 return (
-                  <div key={rowId} onDragOver={(e) => { e.preventDefault(); if (globalDragState === 'row' && !isRowLocked) setRowDragHoverId(rowId); }} onDragLeave={() => setRowDragHoverId(null)} onDrop={(e) => handleDropOnRow(e, rowId)}
-                    className={`min-h-[110px] flex items-stretch py-3 transition-all duration-500 border-b-2 border-dashed ${theme === 'night' ? 'border-white/10' : 'border-stone-300/50'} group ${isRowBeingDragged ? 'opacity-50 brightness-110 scale-[0.98]' : ''} ${isDimmedRow ? 'opacity-40 brightness-75' : 'opacity-100'} ${rowDragHoverId === rowId ? 'bg-white/5 rounded-2xl' : ''}`}
+                  <div key={rowId} 
+                    className={`row-container-drag min-h-[110px] flex items-stretch py-3 transition-all duration-500 border-b-2 border-dashed ${theme === 'night' ? 'border-white/10' : 'border-stone-300/50'} group ${isRowBeingDragged ? 'opacity-50 brightness-110 scale-[0.98]' : ''} ${isDimmedRow ? 'opacity-40 brightness-75' : 'opacity-100'} ${rowDragHoverId === rowId ? 'bg-white/5 rounded-2xl' : ''}`}
+                    onDragOver={(e) => { e.preventDefault(); if (globalDragState === 'row' && !isRowLocked) setRowDragHoverId(rowId); }} 
+                    onDragLeave={() => setRowDragHoverId(null)} 
+                    onDrop={(e) => handleDropOnRow(e, rowId)}
                   >
                     <div className="flex-1 flex flex-wrap gap-2 sm:gap-3 items-center min-h-[75px] pl-2 sm:pl-3 relative">
                       {rowTasks.map((task, index) => (
@@ -825,16 +789,6 @@ export default function App() {
                 </div>
                 <textarea rows={6} value={editingTask.description || ''} onChange={(e) => setEditingTask({ ...editingTask, description: e.target.value })} placeholder="Description..." className={`w-full p-4 rounded-2xl bg-black/5 border border-slate-500/20 focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm leading-relaxed resize-none ${theme === 'night' ? 'placeholder-slate-500 text-white' : 'placeholder-stone-400 text-stone-900'}`}/>
               </div>
-
-              <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/20 mb-4">
-                 <label className="flex items-center gap-2 text-xs font-bold text-blue-500 mb-2 uppercase tracking-wide">
-                   <Clock size={14}/> Set Reminder Date & Time
-                 </label>
-                 <input 
-                   type="datetime-local" value={editingTask.reminder || ''} onChange={(e) => setEditingTask({...editingTask, reminder: e.target.value})} 
-                   className={`w-full bg-black/10 dark:bg-black/20 p-2.5 rounded-lg text-sm font-medium outline-none border border-transparent focus:border-blue-500 text-blue-500 cursor-pointer ${theme === 'night' ? 'color-scheme-dark' : ''}`}
-                 />
-              </div>
             </div>
 
             <div className="flex items-center gap-3 pt-4 border-t border-slate-500/20">
@@ -908,12 +862,12 @@ export default function App() {
                ) : (
                  completedTasks.map((ct, idx) => (
                    <div key={idx} className={`flex justify-between items-center p-4 rounded-2xl border ${theme === 'night' ? 'bg-black/20 border-slate-700/50' : 'bg-black/5 border-stone-200'}`}>
-                      <div>
-                        <h5 className="font-black text-sm">{ct.title || 'Untitled Task'}</h5>
-                        <p className="text-xs font-medium opacity-70 mt-1">{ct.subtitle}</p>
+                      <div className="w-[65%]">
+                        <h5 className="font-black text-sm truncate">{ct.title || 'Untitled Task'}</h5>
+                        <p className="text-xs font-medium opacity-70 mt-1 truncate">{ct.subtitle}</p>
                       </div>
-                      <button onClick={() => handleUndoTask(ct)} className="flex items-center gap-1 text-[10px] uppercase font-bold text-amber-600 bg-amber-500/20 px-3 py-2 rounded-xl hover:bg-amber-500/40 border border-amber-500/30 transition-colors">
-                        <Bandage size={14} /> Restore
+                      <button onClick={() => handleUndoTask(ct)} className="flex items-center gap-1 text-[10px] uppercase font-bold text-amber-600 bg-amber-500/20 px-3 py-2 rounded-xl hover:bg-amber-500/40 border border-amber-500/30 transition-colors shrink-0">
+                        <BandAid size={14} /> Restore
                       </button>
                    </div>
                  ))
@@ -929,7 +883,6 @@ export default function App() {
 // TASK CARD
 function TaskCard({ task, colorObj, index = 0, isDragged, isGrayGhost, isDragOver, isAnimating, isDimmed, onClick, onSlash, onDuplicate, onToggleLock, onDragStart, onDragOver, onDragLeave, onDragEnd }) {
   let bgColor, borderColor, textColor;
-
   const isHeldGray = isGrayGhost;
   
   if (isHeldGray) {
@@ -959,7 +912,6 @@ function TaskCard({ task, colorObj, index = 0, isDragged, isGrayGhost, isDragOve
   }
 
   if (isDragged) return <div className="hidden" />;
-
   const dimClass = isDimmed ? 'opacity-40 brightness-75 scale-95' : 'opacity-100 scale-100';
 
   return (
@@ -1000,7 +952,6 @@ function TaskCard({ task, colorObj, index = 0, isDragged, isGrayGhost, isDragOve
   );
 }
 
-// MOUNT TO ROOT
 const rootElement = document.getElementById('root');
 if (rootElement) {
   ReactDOM.createRoot(rootElement).render(

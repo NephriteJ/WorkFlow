@@ -6,7 +6,7 @@ import {
   Trash2, Pin, Edit2, MinusCircle, Bell, 
   Check, Image as ImageIcon, AlertCircle, UploadCloud, Sword, MoreVertical,
   Copy, LogOut, Skull, ShieldPlus, BarChart3, LogIn,
-  Lock, Unlock, BandAid
+  Lock, Unlock
 } from 'lucide-react';
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
@@ -866,9 +866,15 @@ export default function App() {
                         <h5 className="font-black text-sm truncate">{ct.title || 'Untitled Task'}</h5>
                         <p className="text-xs font-medium opacity-70 mt-1 truncate">{ct.subtitle}</p>
                       </div>
-                      <button onClick={() => handleUndoTask(ct)} className="flex items-center gap-1 text-[10px] uppercase font-bold text-amber-600 bg-amber-500/20 px-3 py-2 rounded-xl hover:bg-amber-500/40 border border-amber-500/30 transition-colors shrink-0">
-                        <BandAid size={14} /> Restore
-                      </button>
+                      <button onClick={() => handleUndoTask(ct)} className="flex items-center gap-1.5 text-[10px] uppercase font-bold text-amber-600 bg-amber-500/20 px-3 py-2 rounded-xl hover:bg-amber-500/40 border border-amber-500/30 transition-colors shrink-0">
+  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="6" width="20" height="12" rx="6" transform="rotate(45 12 12)"/>
+    <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+    <circle cx="9.5" cy="9.5" r="1" fill="currentColor"/>
+    <circle cx="14.5" cy="14.5" r="1" fill="currentColor"/>
+  </svg>
+  Restore
+</button>
                    </div>
                  ))
                )}

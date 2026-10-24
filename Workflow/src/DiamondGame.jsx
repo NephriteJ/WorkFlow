@@ -1,0 +1,392 @@
+import React, { useState, useRef } from 'react';
+import { 
+  X, Trash2, Plus, MinusCircle, PlusCircle, 
+  ChevronRight, ChevronLeft, Bold, RefreshCw, 
+  Settings2, Edit2
+} from 'lucide-react';
+
+// --- CONSTANTS & HELPERS ---
+const getRandomDiamondColor = (index) => {
+  // Variations of reds, crimsons, and ruby pinks
+  const hues = [345, 355, 5, 335, 15]; 
+  const h = hues[index % hues.length];
+  const s = 85 + Math.random() * 15; // 85-100%
+  const l = 45 + Math.random() * 15; // 45-60%
+  return `hsl(${h}, ${s}%, ${l}%)`;
+};
+
+export default function DiamondGame({ onClose }) {
+  // --- WHEEL STATE ---
+  const [names, setNames] = useState([
+    { id: 'n1', text: 'Player 1', color: getRandomDiamondColor(0) },
+    { id: 'n2', text: 'Player 2', color: getRandomDiamondColor(1) },
+    { id: 'n3', text: 'Player 3', color: getRandomDiamondColor(2) }
+  ]);
+  const [newName, setNewName] = useState('');
+  const [rotation, setRotation] = useState(0);
+  const [isSpinning, setIsSpinning] = useState(false);
+  const [winner, setWinner] = useState(null);
+
+  // --- GRID STATE (Starts 2 cols x 20 rows) ---
+  const [colCount, setColCount] = useState(2);
+  const [grid, setGrid] = useState(() => {
+    return Array.from({ length: 20 }, (_, rIdx) => 
+      Array.from({ length: 2 }, (_, cIdx) => ({
+        id: `r${rIdx}c${cIdx}`, text: '', isBold: false, colSpan: 1, isHidden: false
+      }))
+    );
+  });
+
+  // --- WHEEL LOGIC ---
+  const handleAddName = (e) => {
+    e.preventDefault();
+    if (!newName.trim()) return;
+    setNames([...names, { id: Date.now().toString(), text: newName.trim(), color: getRandomDiamondColor(names.length) }]);
+    setNewName('');
+  };
+
+  const handleRemoveName = (id) => {
+    setNames(names.filter(n => n.id !== id));
+  };
+
+  const handleUpdateName = (id, newText) => {
+    setNames(names.map(n => n.id === id ? { ...n, text: newText } : n));
+  };
+
+  const spinWheel = () => {
+    if (names.length === 0 || isSpinning) return;
+    setIsSpinning(true);
+    setWinner(null);
+
+    // Calculate a random extra rotation (5 to 10 full spins + random offset)
+    const extraSpins = Math.floor(Math.random() * 5) + 5; 
+    const randomOffset = Math.floor(Math.random() * 360);
+    const newRotation = rotation + (extraSpins * 360) + randomOffset;
+    
+    setRotation(newRotation);
+
+    // Wait for the CSS transition (4 seconds) to finish
+    setTimeout(() => {
+      setIsSpinning(false);
+      
+      // Calculate which slice landed at the top (0 degrees / 360 degrees)
+      const normalizedRotation = newRotation % 360;
+      // Because conic-gradient starts at top and goes clockwise, 
+      // the slice at the top is the one covering (360 - normalizedRotation)
+      const sliceAngle = 360 / names.length;
+      let winningAngle = (360 - normalizedRotation) % 360;
+      if (winningAngle < 0) winningAngle += 360;
+      
+      const winningIndex = Math.floor(winningAngle / sliceAngle);
+      setWinner(names[winningIndex]);
+    }, 4000); 
+  };
+
+  const handleKeepWinner = () => {
+    setWinner(null);
+  };
+
+  const handleRemoveWinner = () => {
+    setNames(names.filter(n => n.id !== winner.id));
+    setWinner(null);
+  };
+
+  // Conic gradient string for the CSS wheel background
+  const getConicGradient = () => {
+    if (names.length === 0) return 'conic-gradient(#333 0deg, #555 360deg)';
+    const sliceAngle = 360 / names.length;
+    let gradientParts = [];
+    for (let i = 0; i < names.length; i++) {
+      const startAngle = i * sliceAngle;
+      const endAngle = startAngle + sliceAngle;
+      gradientParts.push(`${names[i].color} ${startAngle}deg ${endAngle}deg`);
+    }
+    return `conic-gradient(${gradientParts.join(', ')})`;
+  };
+  // --- GRID LOGIC ---
+  const handleAddRow = () => {
+    setGrid([...grid, Array.from({ length: colCount }, (_, cIdx) => ({
+      id: `r${grid.length}c${cIdx}_${Date.now()}`, text: '', isBold: false, colSpan: 1, isHidden: false
+    }))]);
+  };
+
+  const handleRemoveRow = () => {
+    if (grid.length > 1) setGrid(grid.slice(0, -1));
+  };
+
+  const handleAddCol = () => {
+    setColCount(c => c + 1);
+    setGrid(grid.map((row, rIdx) => [
+      ...row, 
+      { id: `r${rIdx}c${colCount}_${Date.now()}`, text: '', isBold: false, colSpan: 1, isHidden: false }
+    ]));
+  };
+
+  const handleRemoveCol = () => {
+    if (colCount > 1) {
+      setColCount(c => c - 1);
+      setGrid(grid.map(row => {
+        const newRow = [...row];
+        // Safely remove the last physical cell. 
+        // Note: if the last cell is part of a merge, it truncates the table visually.
+        newRow.pop(); 
+        return newRow;
+      }));
+    }
+  };
+
+  const updateCell = (rIdx, cIdx, updates) => {
+    setGrid(grid.map((row, i) => 
+      i === rIdx ? row.map((cell, j) => j === cIdx ? { ...cell, ...updates } : cell) : row
+    ));
+  };
+
+  // Merge Right: Takes the current cell, absorbs the next visible cell's span, and hides the next cell.
+  const handleMergeRight = (rIdx, cIdx) => {
+    setGrid(grid.map((row, i) => {
+      if (i !== rIdx) return row;
+      const newRow = [...row];
+      const currentCell = newRow[cIdx];
+      
+      let nextIdx = cIdx + 1;
+      while (nextIdx < colCount && newRow[nextIdx].isHidden) nextIdx++;
+      
+      if (nextIdx < colCount) {
+        const nextCell = newRow[nextIdx];
+        newRow[cIdx] = { ...currentCell, colSpan: currentCell.colSpan + nextCell.colSpan };
+        newRow[nextIdx] = { ...nextCell, isHidden: true, text: '' };
+      }
+      return newRow;
+    }));
+  };
+
+  // Merge Left: Finds the previous visible cell, gives it this cell's span, and hides this cell.
+  const handleMergeLeft = (rIdx, cIdx) => {
+    setGrid(grid.map((row, i) => {
+      if (i !== rIdx) return row;
+      const newRow = [...row];
+      
+      let prevIdx = cIdx - 1;
+      while (prevIdx >= 0 && newRow[prevIdx].isHidden) prevIdx--;
+      
+      if (prevIdx >= 0) {
+        const prevCell = newRow[prevIdx];
+        const currentCell = newRow[cIdx];
+        newRow[prevIdx] = { ...prevCell, colSpan: prevCell.colSpan + currentCell.colSpan };
+        newRow[cIdx] = { ...currentCell, isHidden: true, text: '' };
+      }
+      return newRow;
+    }));
+  };
+
+  // Row Batch Actions
+  const handleRowAction = (rIdx, action) => {
+    setGrid(grid.map((row, i) => {
+      if (i !== rIdx) return row;
+      const allBold = row.every(c => c.isHidden || c.isBold);
+      return row.map(cell => {
+        if (action === 'bold') return { ...cell, isBold: !allBold };
+        if (action === 'clear') return { ...cell, text: '' };
+        return cell;
+      });
+    }));
+  };
+
+  // Column Batch Actions
+  const handleColAction = (cIdx, action) => {
+    setGrid(grid.map(row => row.map((cell, j) => {
+      if (j !== cIdx) return cell;
+      return action === 'bold' ? { ...cell, isBold: !cell.isBold } : { ...cell, text: '' };
+    })));
+  };
+  // --- RENDERING ---
+  return (
+    <div className="fixed inset-0 z-[100] flex flex-col bg-gradient-to-br from-rose-950 via-slate-900 to-emerald-950 text-white overflow-y-auto overflow-x-hidden font-sans">
+      
+      {/* HEADER */}
+      <div className="sticky top-0 z-50 flex items-center justify-between p-4 sm:p-6 bg-black/40 backdrop-blur-md border-b border-white/10">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-rose-600 rounded-xl flex items-center justify-center shadow-lg shadow-rose-900/50 rotate-45">
+             <div className="-rotate-45 font-black text-xl text-white">♦</div>
+          </div>
+          <h2 className="text-xl sm:text-2xl font-black uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-amber-400">Diamond Destinies</h2>
+        </div>
+        <button onClick={onClose} className="p-2.5 bg-white/10 hover:bg-white/20 rounded-full transition-colors backdrop-blur-sm">
+          <X size={24} strokeWidth={3} />
+        </button>
+      </div>
+
+      <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex flex-col gap-12 pb-32">
+        
+        {/* TOP SECTION: WHEEL & NAMES */}
+        <div className="flex flex-col lg:flex-row gap-8 items-start justify-center pt-4">
+           
+           {/* THE WHEEL CONTAINER */}
+           <div className="w-full lg:w-1/2 flex flex-col items-center">
+              <div className="relative w-[300px] h-[300px] sm:w-[400px] sm:h-[400px] flex-shrink-0">
+                 {/* Pointer/Pin */}
+                 <div className="absolute -top-4 left-1/2 -translate-x-1/2 z-20 w-8 h-10 bg-amber-400" style={{ clipPath: 'polygon(50% 100%, 0 0, 100% 0)' }}></div>
+                 
+                 {/* The Wheel */}
+                 <div 
+                   className="w-full h-full rounded-full border-8 border-slate-800 shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden transition-transform duration-[4000ms] ease-[cubic-bezier(0.15,0.85,0.15,1)] relative"
+                   style={{ 
+                     background: getConicGradient(), 
+                     transform: `rotate(${rotation}deg)` 
+                   }}
+                 >
+                    {/* Inner styling ring */}
+                    <div className="absolute inset-0 rounded-full border-[12px] border-black/20 pointer-events-none"></div>
+                 </div>
+
+                 {/* Center Spin Button */}
+                 <button 
+                   onClick={spinWheel} 
+                   disabled={isSpinning || names.length === 0}
+                   className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 sm:w-24 sm:h-24 bg-gradient-to-br from-rose-500 to-rose-700 hover:from-rose-400 hover:to-rose-600 rounded-full flex items-center justify-center font-black text-lg sm:text-xl uppercase tracking-wider shadow-2xl border-4 border-rose-950 active:scale-95 transition-all disabled:opacity-50 z-10"
+                 >
+                   SPIN
+                 </button>
+              </div>
+           </div>
+
+           {/* NAME MANAGEMENT */}
+           <div className="w-full lg:w-1/2 bg-black/30 backdrop-blur-md border border-white/10 rounded-3xl p-6 shadow-xl">
+             <h3 className="text-lg font-black uppercase tracking-wider mb-4 flex items-center gap-2">
+               <Settings2 size={20} className="text-amber-400"/> Wheel Entries ({names.length})
+             </h3>
+             
+             <form onSubmit={handleAddName} className="flex gap-2 mb-6">
+               <input 
+                 type="text" value={newName} onChange={(e) => setNewName(e.target.value)} 
+                 placeholder="Enter a name..." 
+                 className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-rose-500 transition-colors placeholder-white/30 font-semibold"
+               />
+               <button type="submit" className="bg-rose-600 hover:bg-rose-500 px-4 rounded-xl font-bold flex items-center justify-center transition-colors">
+                 <Plus size={20} strokeWidth={3} />
+               </button>
+             </form>
+
+             <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+               {names.map((name) => (
+                 <div key={name.id} className="flex items-center gap-3 bg-white/5 border border-white/5 p-3 rounded-xl group">
+                   <div className="w-4 h-4 rounded-full shadow-inner" style={{ backgroundColor: name.color }}></div>
+                   <input 
+                     type="text" value={name.text} 
+                     onChange={(e) => handleUpdateName(name.id, e.target.value)}
+                     className="flex-1 bg-transparent outline-none font-bold text-sm sm:text-base border-b border-transparent focus:border-white/30 transition-colors"
+                   />
+                   <button onClick={() => handleRemoveName(name.id)} className="p-2 bg-rose-500/10 text-rose-400 hover:bg-rose-500 hover:text-white rounded-lg transition-colors opacity-50 group-hover:opacity-100">
+                     <Trash2 size={16} />
+                   </button>
+                 </div>
+               ))}
+               {names.length === 0 && <p className="text-center opacity-50 italic py-4">Add names to populate the wheel</p>}
+             </div>
+           </div>
+        </div>
+
+        {/* WINNER MODAL */}
+        {winner && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+            <div className="relative bg-slate-900 border border-rose-500/30 p-8 rounded-3xl max-w-md w-full text-center shadow-[0_0_100px_rgba(225,29,72,0.4)] animate-in zoom-in-95 duration-300">
+              <div className="w-20 h-20 mx-auto rounded-full mb-6 border-4 border-slate-800 shadow-xl" style={{ backgroundColor: winner.color }}></div>
+              <h4 className="text-amber-400 font-bold uppercase tracking-widest text-sm mb-2">The Wheel has spoken</h4>
+              <h2 className="text-4xl font-black text-white mb-8 drop-shadow-md">{winner.text}</h2>
+              <div className="flex gap-4">
+                 <button onClick={handleRemoveWinner} className="flex-1 py-4 bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white rounded-xl font-bold transition-all border border-rose-600/50">
+                   Remove from Wheel
+                 </button>
+                 <button onClick={handleKeepWinner} className="flex-1 py-4 bg-amber-500 hover:bg-amber-400 text-amber-950 rounded-xl font-black transition-all shadow-[0_0_20px_rgba(245,158,11,0.3)]">
+                   Keep & Continue
+                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* BOTTOM SECTION: DYNAMIC GRID TABLE */}
+        <div className="w-full bg-black/40 backdrop-blur-md border border-white/10 rounded-3xl p-4 sm:p-6 shadow-xl overflow-x-auto">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 min-w-[600px] gap-4">
+             <h3 className="text-lg font-black uppercase tracking-wider flex items-center gap-2">
+               <Edit2 size={20} className="text-amber-400"/> Dynamic Grid
+             </h3>
+             
+             {/* ADD / REMOVE ROWS & COLS */}
+             <div className="flex items-center gap-4">
+               <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl p-1.5">
+                 <span className="text-xs font-bold uppercase opacity-50 px-2">Columns</span>
+                 <button onClick={handleRemoveCol} className="p-1.5 hover:bg-rose-500/20 text-rose-400 rounded-lg transition-colors"><MinusCircle size={18}/></button>
+                 <span className="font-black px-2">{colCount}</span>
+                 <button onClick={handleAddCol} className="p-1.5 hover:bg-emerald-500/20 text-emerald-400 rounded-lg transition-colors"><PlusCircle size={18}/></button>
+               </div>
+               <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl p-1.5">
+                 <span className="text-xs font-bold uppercase opacity-50 px-2">Rows</span>
+                 <button onClick={handleRemoveRow} className="p-1.5 hover:bg-rose-500/20 text-rose-400 rounded-lg transition-colors"><MinusCircle size={18}/></button>
+                 <span className="font-black px-2">{grid.length}</span>
+                 <button onClick={handleAddRow} className="p-1.5 hover:bg-emerald-500/20 text-emerald-400 rounded-lg transition-colors"><PlusCircle size={18}/></button>
+               </div>
+             </div>
+          </div>
+
+          {/* THE GRID */}
+          <div className="min-w-[800px]">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr>
+                  <th className="w-16 p-2"></th>
+                  {Array.from({ length: colCount }).map((_, cIdx) => (
+                    <th key={cIdx} className="p-2">
+                      <div className="flex justify-center gap-2 opacity-50 hover:opacity-100 transition-opacity bg-black/20 rounded-lg py-1">
+                        <button onClick={() => handleColAction(cIdx, 'bold')} className="p-1.5 hover:text-amber-400 font-black text-xs transition-colors" title="Bold Column">B</button>
+                        <button onClick={() => handleColAction(cIdx, 'clear')} className="p-1.5 hover:text-rose-400 transition-colors" title="Clear Column"><Trash2 size={14}/></button>
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {grid.map((row, rIdx) => (
+                  <tr key={rIdx}>
+                    <td className="w-16 p-2 align-middle">
+                      <div className="flex flex-col items-center gap-2 opacity-50 hover:opacity-100 transition-opacity bg-black/20 rounded-lg px-1 py-2">
+                        <button onClick={() => handleRowAction(rIdx, 'bold')} className="p-1.5 hover:text-amber-400 font-black text-xs transition-colors" title="Bold Row">B</button>
+                        <button onClick={() => handleRowAction(rIdx, 'clear')} className="p-1.5 hover:text-rose-400 transition-colors" title="Clear Row"><Trash2 size={14}/></button>
+                      </div>
+                    </td>
+                    {row.map((cell, cIdx) => {
+                      if (cell.isHidden) return null;
+                      return (
+                        <td key={cell.id} colSpan={cell.colSpan} className="p-2 transition-all">
+                          <div className="flex flex-col bg-white/5 border border-white/10 rounded-xl overflow-hidden focus-within:border-amber-400/50 focus-within:bg-white/10 transition-colors shadow-sm">
+                            <div className="flex items-center justify-between bg-black/30 p-1 border-b border-white/5">
+                              <div className="flex items-center">
+                                <button onClick={() => updateCell(rIdx, cIdx, { isBold: !cell.isBold })} className={`p-1.5 rounded hover:bg-white/10 text-xs font-black transition-colors ${cell.isBold ? 'text-amber-400' : 'text-white/50'}`}>B</button>
+                                <button onClick={() => updateCell(rIdx, cIdx, { text: '' })} className="p-1.5 rounded hover:bg-rose-500/20 text-rose-400 transition-colors"><Trash2 size={12}/></button>
+                              </div>
+                              <div className="flex items-center">
+                                <button onClick={() => handleMergeLeft(rIdx, cIdx)} className="p-1.5 rounded hover:bg-white/10 text-white/50 font-bold text-xs" title="Merge Left">{'<'}</button>
+                                <button onClick={() => handleMergeRight(rIdx, cIdx)} className="p-1.5 rounded hover:bg-white/10 text-white/50 font-bold text-xs" title="Merge Right">{'>'}</button>
+                              </div>
+                            </div>
+                            <textarea
+                              rows={2}
+                              value={cell.text}
+                              onChange={(e) => updateCell(rIdx, cIdx, { text: e.target.value })}
+                              className={`w-full bg-transparent p-3 outline-none resize-none text-sm placeholder-white/20 ${cell.isBold ? 'font-bold text-amber-50' : 'font-medium text-white/90'}`}
+                              placeholder="Type here..."
+                            />
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

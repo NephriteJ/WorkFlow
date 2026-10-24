@@ -570,6 +570,7 @@ export default function App() {
       </aside>
 
       {/* HEADER (Sticky & Scroll Responsive) */}
+      {/* HEADER (Sticky & Scroll Responsive) */}
       <header className={`fixed top-0 w-full z-30 px-4 sm:px-6 py-3 flex items-center justify-between backdrop-blur-md bg-black/10 transition-transform duration-500 ease-in-out ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}>
         <div className="flex items-center gap-3">
           <button onClick={() => setSidebarOpen(true)} className={`p-2 rounded-xl active:scale-95 transition-all ${theme === 'night' ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-black/10 hover:bg-black/20 text-stone-900'}`}>
@@ -580,17 +581,13 @@ export default function App() {
             <span className="font-black text-amber-500 text-sm tracking-wide">{points} pts</span>
           </button>
         </div>
-        <div className="flex items-center gap-3 mr-20 sm:mr-28">
-  {/* NEW DIAMOND GAME BUTTON */}
-  <button onClick={() => setShowDiamondGame(true)} className="p-2.5 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white shadow-md transition-all">
-     <div className="rotate-45 font-black text-sm flex items-center justify-center w-5 h-5">♦</div>
-  </button>
-
-  <button onClick={() => setGraveyardOpen(true)} className={`p-2.5 rounded-xl border transition-colors shadow-md ...`}>
-     <Skull size={20} />
-  </button>
 
         <div className="flex items-center gap-3 mr-20 sm:mr-28">
+          {/* NEW DIAMOND GAME BUTTON */}
+          <button onClick={() => setShowDiamondGame(true)} className="p-2.5 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white shadow-md transition-all">
+             <div className="rotate-45 font-black text-sm flex items-center justify-center w-5 h-5">♦</div>
+          </button>
+
           <button onClick={() => setGraveyardOpen(true)} className={`p-2.5 rounded-xl border transition-colors shadow-md ${theme === 'night' ? 'bg-slate-900/80 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white' : 'bg-white/80 border-stone-300 text-stone-600 hover:bg-white hover:text-stone-900'}`}>
              <Skull size={20} />
           </button>

@@ -6,7 +6,7 @@ import {
   Trash2, Pin, Edit2, MinusCircle, Bell, 
   Check, Image as ImageIcon, AlertCircle, UploadCloud, Sword, MoreVertical,
   Copy, LogOut, Skull, ShieldPlus, BarChart3, LogIn,
-  Lock, Unlock, Bandage
+  Lock, Unlock, BandAid
 } from 'lucide-react';
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithPopup, GoogleAuthProvider } from "firebase/auth";

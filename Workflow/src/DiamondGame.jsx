@@ -1,17 +1,15 @@
 import React, { useState, useRef } from 'react';
 import { 
   X, Trash2, Plus, MinusCircle, PlusCircle, 
-  ChevronRight, ChevronLeft, Bold, RefreshCw, 
   Settings2, Edit2
 } from 'lucide-react';
 
 // --- CONSTANTS & HELPERS ---
 const getRandomDiamondColor = (index) => {
-  // Variations of reds, crimsons, and ruby pinks
   const hues = [345, 355, 5, 335, 15]; 
   const h = hues[index % hues.length];
-  const s = 85 + Math.random() * 15; // 85-100%
-  const l = 45 + Math.random() * 15; // 45-60%
+  const s = 85 + Math.random() * 15; 
+  const l = 45 + Math.random() * 15; 
   return `hsl(${h}, ${s}%, ${l}%)`;
 };
 
@@ -58,21 +56,15 @@ export default function DiamondGame({ onClose }) {
     setIsSpinning(true);
     setWinner(null);
 
-    // Calculate a random extra rotation (5 to 10 full spins + random offset)
     const extraSpins = Math.floor(Math.random() * 5) + 5; 
     const randomOffset = Math.floor(Math.random() * 360);
     const newRotation = rotation + (extraSpins * 360) + randomOffset;
     
     setRotation(newRotation);
 
-    // Wait for the CSS transition (4 seconds) to finish
     setTimeout(() => {
       setIsSpinning(false);
-      
-      // Calculate which slice landed at the top (0 degrees / 360 degrees)
       const normalizedRotation = newRotation % 360;
-      // Because conic-gradient starts at top and goes clockwise, 
-      // the slice at the top is the one covering (360 - normalizedRotation)
       const sliceAngle = 360 / names.length;
       let winningAngle = (360 - normalizedRotation) % 360;
       if (winningAngle < 0) winningAngle += 360;
@@ -82,16 +74,13 @@ export default function DiamondGame({ onClose }) {
     }, 4000); 
   };
 
-  const handleKeepWinner = () => {
-    setWinner(null);
-  };
+  const handleKeepWinner = () => setWinner(null);
 
   const handleRemoveWinner = () => {
     setNames(names.filter(n => n.id !== winner.id));
     setWinner(null);
   };
 
-  // Conic gradient string for the CSS wheel background
   const getConicGradient = () => {
     if (names.length === 0) return 'conic-gradient(#333 0deg, #555 360deg)';
     const sliceAngle = 360 / names.length;
@@ -127,8 +116,6 @@ export default function DiamondGame({ onClose }) {
       setColCount(c => c - 1);
       setGrid(grid.map(row => {
         const newRow = [...row];
-        // Safely remove the last physical cell. 
-        // Note: if the last cell is part of a merge, it truncates the table visually.
         newRow.pop(); 
         return newRow;
       }));
@@ -141,7 +128,13 @@ export default function DiamondGame({ onClose }) {
     ));
   };
 
-  // Merge Right: Takes the current cell, absorbs the next visible cell's span, and hides the next cell.
+  // Smart text combiner: adds space only if both have text
+  const combineText = (text1, text2) => {
+    if (text1 && text2) return `${text1} ${text2}`;
+    return text1 || text2 || '';
+  };
+
+  // MERGE RIGHT: Cell 1 takes Cell 2. Result text: "Cell1 Cell2"
   const handleMergeRight = (rIdx, cIdx) => {
     setGrid(grid.map((row, i) => {
       if (i !== rIdx) return row;
@@ -153,14 +146,18 @@ export default function DiamondGame({ onClose }) {
       
       if (nextIdx < colCount) {
         const nextCell = newRow[nextIdx];
-        newRow[cIdx] = { ...currentCell, colSpan: currentCell.colSpan + nextCell.colSpan };
+        newRow[cIdx] = { 
+          ...currentCell, 
+          colSpan: currentCell.colSpan + nextCell.colSpan,
+          text: combineText(currentCell.text, nextCell.text)
+        };
         newRow[nextIdx] = { ...nextCell, isHidden: true, text: '' };
       }
       return newRow;
     }));
   };
 
-  // Merge Left: Finds the previous visible cell, gives it this cell's span, and hides this cell.
+  // MERGE LEFT: Cell 2 goes into Cell 1. Result text: "Cell2 Cell1"
   const handleMergeLeft = (rIdx, cIdx) => {
     setGrid(grid.map((row, i) => {
       if (i !== rIdx) return row;
@@ -172,8 +169,37 @@ export default function DiamondGame({ onClose }) {
       if (prevIdx >= 0) {
         const prevCell = newRow[prevIdx];
         const currentCell = newRow[cIdx];
-        newRow[prevIdx] = { ...prevCell, colSpan: prevCell.colSpan + currentCell.colSpan };
+        
+        // The left-most cell (prevCell) must remain the visible one for HTML colSpan to work
+        newRow[prevIdx] = { 
+          ...prevCell, 
+          colSpan: prevCell.colSpan + currentCell.colSpan,
+          text: combineText(currentCell.text, prevCell.text)
+        };
         newRow[cIdx] = { ...currentCell, isHidden: true, text: '' };
+      }
+      return newRow;
+    }));
+  };
+
+  // UNGROUP: Restores hidden cells if this block spans multiple columns
+  const handleUngroup = (rIdx, cIdx) => {
+    setGrid(grid.map((row, i) => {
+      if (i !== rIdx) return row;
+      const newRow = [...row];
+      const currentCell = newRow[cIdx];
+      const span = currentCell.colSpan;
+      
+      if (span > 1) {
+        newRow[cIdx] = { ...currentCell, colSpan: 1 };
+        let unhiddenCount = 0;
+        // Unhide the exact number of cells that were absorbed
+        for (let k = cIdx + 1; k < colCount && unhiddenCount < span - 1; k++) {
+          if (newRow[k].isHidden) {
+            newRow[k] = { ...newRow[k], isHidden: false, colSpan: 1, text: '' };
+            unhiddenCount++;
+          }
+        }
       }
       return newRow;
     }));
@@ -201,13 +227,15 @@ export default function DiamondGame({ onClose }) {
   };
   // --- RENDERING ---
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-gradient-to-br from-rose-950 via-slate-900 to-emerald-950 text-white overflow-y-auto overflow-x-hidden font-sans">
+    <div className="fixed inset-0 z-[100] flex flex-col bg-gradient-to-br from-slate-950 via-rose-950 to-slate-950 text-white overflow-y-auto overflow-x-hidden font-sans">
       
-      {/* HEADER */}
+      {/* HEADER WITH NEW RED DIAMOND LOGO */}
       <div className="sticky top-0 z-50 flex items-center justify-between p-4 sm:p-6 bg-black/40 backdrop-blur-md border-b border-white/10">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-rose-600 rounded-xl flex items-center justify-center shadow-lg shadow-rose-900/50 rotate-45">
-             <div className="-rotate-45 font-black text-xl text-white">♦</div>
+          <div className="flex items-center justify-center">
+            <svg viewBox="0 0 24 24" fill="currentColor" className="w-10 h-10 text-rose-600 drop-shadow-[0_0_15px_rgba(225,29,72,0.8)]">
+              <path d="M12 2L2 12l10 10 10-10L12 2z"/>
+            </svg>
           </div>
           <h2 className="text-xl sm:text-2xl font-black uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-amber-400">Diamond Destinies</h2>
         </div>
@@ -227,7 +255,7 @@ export default function DiamondGame({ onClose }) {
                  {/* Pointer/Pin */}
                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 z-20 w-8 h-10 bg-amber-400" style={{ clipPath: 'polygon(50% 100%, 0 0, 100% 0)' }}></div>
                  
-                 {/* The Wheel */}
+                 {/* The Wheel with Names Inside */}
                  <div 
                    className="w-full h-full rounded-full border-8 border-slate-800 shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden transition-transform duration-[4000ms] ease-[cubic-bezier(0.15,0.85,0.15,1)] relative"
                    style={{ 
@@ -235,15 +263,31 @@ export default function DiamondGame({ onClose }) {
                      transform: `rotate(${rotation}deg)` 
                    }}
                  >
+                    {/* Map Names onto the slices */}
+                    {names.length > 0 && names.map((name, i) => {
+                      const sliceAngle = 360 / names.length;
+                      const nameRotation = i * sliceAngle + sliceAngle / 2;
+                      return (
+                        <div 
+                          key={`wheel_txt_${name.id}`} 
+                          className="absolute inset-0 flex items-start justify-center pt-6 sm:pt-10 origin-center pointer-events-none z-10"
+                          style={{ transform: `rotate(${nameRotation}deg)` }}
+                        >
+                          <span className="font-black text-white text-xs sm:text-sm tracking-wider drop-shadow-md truncate w-20 sm:w-28 text-center" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.8)' }}>
+                            {name.text}
+                          </span>
+                        </div>
+                      );
+                    })}
                     {/* Inner styling ring */}
-                    <div className="absolute inset-0 rounded-full border-[12px] border-black/20 pointer-events-none"></div>
+                    <div className="absolute inset-0 rounded-full border-[12px] border-black/20 pointer-events-none z-20"></div>
                  </div>
 
                  {/* Center Spin Button */}
                  <button 
                    onClick={spinWheel} 
                    disabled={isSpinning || names.length === 0}
-                   className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 sm:w-24 sm:h-24 bg-gradient-to-br from-rose-500 to-rose-700 hover:from-rose-400 hover:to-rose-600 rounded-full flex items-center justify-center font-black text-lg sm:text-xl uppercase tracking-wider shadow-2xl border-4 border-rose-950 active:scale-95 transition-all disabled:opacity-50 z-10"
+                   className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 sm:w-24 sm:h-24 bg-gradient-to-br from-rose-500 to-rose-700 hover:from-rose-400 hover:to-rose-600 rounded-full flex items-center justify-center font-black text-lg sm:text-xl uppercase tracking-wider shadow-2xl border-4 border-rose-950 active:scale-95 transition-all disabled:opacity-50 z-30"
                  >
                    SPIN
                  </button>
@@ -361,11 +405,17 @@ export default function DiamondGame({ onClose }) {
                           <div className="flex flex-col bg-white/5 border border-white/10 rounded-xl overflow-hidden focus-within:border-amber-400/50 focus-within:bg-white/10 transition-colors shadow-sm">
                             <div className="flex items-center justify-between bg-black/30 p-1 border-b border-white/5">
                               <div className="flex items-center">
-                                <button onClick={() => updateCell(rIdx, cIdx, { isBold: !cell.isBold })} className={`p-1.5 rounded hover:bg-white/10 text-xs font-black transition-colors ${cell.isBold ? 'text-amber-400' : 'text-white/50'}`}>B</button>
+                                <button onClick={() => updateCell(rIdx, cIdx, { isBold: !cell.isBold })} className={`p-1.5 rounded hover:bg-white/10 text-xs font-black transition-colors ${cell.isBold ? 'text-rose-500' : 'text-white/50'}`}>B</button>
                                 <button onClick={() => updateCell(rIdx, cIdx, { text: '' })} className="p-1.5 rounded hover:bg-rose-500/20 text-rose-400 transition-colors"><Trash2 size={12}/></button>
                               </div>
                               <div className="flex items-center">
                                 <button onClick={() => handleMergeLeft(rIdx, cIdx)} className="p-1.5 rounded hover:bg-white/10 text-white/50 font-bold text-xs" title="Merge Left">{'<'}</button>
+                                
+                                {/* ONLY SHOW UNGROUP BUTTON IF MERGED */}
+                                {cell.colSpan > 1 && (
+                                  <button onClick={() => handleUngroup(rIdx, cIdx)} className="p-1.5 rounded hover:bg-white/10 text-amber-400 font-black text-[11px]" title="Ungroup Block">{'><'}</button>
+                                )}
+                                
                                 <button onClick={() => handleMergeRight(rIdx, cIdx)} className="p-1.5 rounded hover:bg-white/10 text-white/50 font-bold text-xs" title="Merge Right">{'>'}</button>
                               </div>
                             </div>
@@ -373,7 +423,7 @@ export default function DiamondGame({ onClose }) {
                               rows={2}
                               value={cell.text}
                               onChange={(e) => updateCell(rIdx, cIdx, { text: e.target.value })}
-                              className={`w-full bg-transparent p-3 outline-none resize-none text-sm placeholder-white/20 ${cell.isBold ? 'font-bold text-amber-50' : 'font-medium text-white/90'}`}
+                              className={`w-full bg-transparent p-3 outline-none resize-none text-sm placeholder-white/20 ${cell.isBold ? 'font-black text-rose-500 drop-shadow-sm' : 'font-medium text-white/90'}`}
                               placeholder="Type here..."
                             />
                           </div>

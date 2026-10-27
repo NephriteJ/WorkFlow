@@ -5,7 +5,7 @@ import {
   Settings, User, Clock, 
   Trash2, Pin, Edit2, MinusCircle, Bell, 
   Check, Image as ImageIcon, AlertCircle, UploadCloud, Sword, MoreVertical,
-  Copy, LogOut, Skull, ShieldPlus, LogIn, ChevronUp, ChevronDown
+  Copy, LogOut, Skull, ShieldPlus, BarChart3, LogIn, ChevronUp, ChevronDown, Lock, Unlock
 } from 'lucide-react';
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
@@ -39,14 +39,12 @@ const DYNAMIC_COLORS = [
 const FORGOTTEN_COLOR = { hue: 215, sat: 15, baseL: 40, text: 'text-slate-100' };
 const AVATARS = ['/pfp1.jpeg', '/pfp2.jpeg', '/pfp3.jpeg', '/pfp4.jpeg'];
 
-// SAFE LOCAL STORAGE PARSER
-// SAFE LOCAL STORAGE PARSER
+// ROBUST LOCAL STORAGE PARSER (Prevents blank screen crashes)
 const safeLoad = (key, fallback) => {
   try {
     const saved = localStorage.getItem(key);
     if (!saved) return fallback;
     const parsed = JSON.parse(saved);
-    // If the app expects an array (like tasks) but gets something else, use fallback
     if (Array.isArray(fallback) && !Array.isArray(parsed)) return fallback;
     return parsed;
   } catch (e) {
@@ -57,7 +55,7 @@ const safeLoad = (key, fallback) => {
 
 export default function App() {
   // --- AUTH & INTRO STATE ---
-  // --- AUTH & INTRO STATE ---
+  // Fix: Auto-skip splash screen if auth token is present
   const [currentView, setCurrentView] = useState(() => {
     return localStorage.getItem('workflow_auth') === 'true' ? 'main' : 'splash';
   });
@@ -98,6 +96,7 @@ export default function App() {
   const [draggedRowId, setDraggedRowId] = useState(null);
   const [isHoveringTrash, setIsHoveringTrash] = useState(false);
   const [rowDragHoverId, setRowDragHoverId] = useState(null); 
+  const [lockedRows, setLockedRows] = useState(() => safeLoad('workflow_locked_rows', []));
   
   const dragTimeoutRef = useRef(null);
   const dragStartTimeoutRef = useRef(null);
@@ -112,6 +111,7 @@ export default function App() {
   useEffect(() => { localStorage.setItem('workflow_tasks', JSON.stringify(tasks)); }, [tasks]);
   useEffect(() => { localStorage.setItem('workflow_completed', JSON.stringify(completedTasks)); }, [completedTasks]);
   useEffect(() => { localStorage.setItem('workflow_deleted', JSON.stringify(deletedTasks)); }, [deletedTasks]);
+  useEffect(() => { localStorage.setItem('workflow_locked_rows', JSON.stringify(lockedRows)); }, [lockedRows]);
 
   useEffect(() => {
     if (activeModal || editingTask || slashingTask || graveyardOpen || sidebarOpen || showDiamondGame) {
@@ -398,8 +398,9 @@ export default function App() {
     return (
       <div 
         onClick={handleSplashClick}
-        className={`relative min-h-screen w-full flex flex-col items-center justify-center p-6 overflow-hidden select-none cursor-pointer bg-gradient-to-br from-indigo-900 via-purple-900 to-amber-900 transition-all duration-500 ease-in-out ${isFading ? 'opacity-0 scale-110 pointer-events-none' : 'opacity-100 scale-100'}`}
+        className={`relative min-h-screen w-full flex flex-col items-center justify-center p-6 overflow-hidden select-none cursor-pointer bg-slate-950 transition-all duration-500 ease-in-out ${isFading ? 'opacity-0 scale-110 pointer-events-none' : 'opacity-100 scale-100'}`}
       >
+        <div className="absolute inset-0 bg-gradient-to-br from-indigo-900 via-purple-900 to-amber-900 opacity-90"></div>
         <div className="absolute inset-0 opacity-30 mix-blend-overlay" style={{ backgroundImage: 'url("https://www.transparenttextures.com/patterns/stardust.png")' }}></div>
 
         <div className={`flex flex-col items-center text-center max-w-md w-full z-10 transition-all duration-1000 ease-in-out ${introStage > 0 ? '-translate-y-32' : ''}`}>
@@ -428,7 +429,6 @@ export default function App() {
     );
   }
 
-  // MAIN APP VIEW
   // MAIN APP VIEW
   return (
     <div className={`relative min-h-screen w-full flex overflow-x-hidden ${theme === 'night' ? 'bg-slate-950 text-slate-100' : 'bg-stone-100 text-stone-900'} transition-colors duration-500 font-sans`}>
@@ -514,9 +514,9 @@ export default function App() {
       <div 
         onDragOver={(e) => e.preventDefault()} 
         onDrop={(e) => handleDropOnRow(e, 'forgotten')} 
-        className={`fixed left-0 top-20 bottom-0 w-[200px] p-3 overflow-y-auto z-20 border-r-2 border-dashed transition-all hidden sm:block ${theme === 'night' ? 'bg-slate-900/40 border-slate-600/50' : 'bg-white/40 border-stone-300/60'} ${globalDragState === 'row' ? 'opacity-40 brightness-75' : ''}`}
+        className={`fixed left-0 top-20 bottom-0 w-[200px] p-3 overflow-y-auto z-20 border-r-2 border-dashed transition-all hidden sm:block custom-scrollbar ${theme === 'night' ? 'bg-slate-900/40 border-slate-600/50' : 'bg-white/40 border-stone-300/60'} ${globalDragState === 'row' ? 'opacity-40 brightness-75' : ''}`}
       >
-        <div className="flex items-center gap-2 mb-4 px-1">
+        <div className="flex items-center gap-2 mb-4 px-1 sticky top-0 bg-transparent backdrop-blur-md z-10 py-2">
           <div className="w-3 h-3 rounded-full bg-slate-400"></div>
           <h3 className={`text-xs uppercase font-extrabold tracking-widest ${theme === 'night' ? 'text-slate-300' : 'text-stone-600'}`}>No Priority</h3>
         </div>
@@ -744,6 +744,50 @@ export default function App() {
               )}
 
               <button onClick={() => handleSaveTask(editingTask)} className="flex-1 py-3.5 px-6 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-stone-950 font-black text-sm shadow-xl active:scale-98 transition-all flex items-center justify-center gap-2"><Check size={18} strokeWidth={2.5} /> <span>Save Card</span></button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* COMPLETED TASKS MODAL */}
+      {activeModal === 'treasure' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setActiveModal(null)} />
+          <div className={`relative w-full max-w-md max-h-[85vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden ${theme === 'night' ? 'bg-[#1a1040] border-amber-500/20 text-white' : 'bg-white border-amber-200 text-stone-900'} border animate-in zoom-in-95 duration-300`}>
+            
+            <div className={`flex justify-between items-center p-6 border-b ${theme === 'night' ? 'border-amber-500/20 bg-black/20' : 'border-amber-500/10 bg-amber-50/50'}`}>
+              <h3 className="font-black text-xl text-amber-500 flex items-center gap-2">
+                <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path d="M4 17L2 5l6.5 4.5L12 2l3.5 7.5L22 5l-2 12H4zm16 2c0 .6-.4 1-1 1H5c-.6 0-1-.4-1-1v-1h16v1z"/></svg>
+                Completed Quests
+              </h3>
+              <button onClick={() => setActiveModal(null)} className="p-2 rounded-full hover:bg-black/10 transition-colors"><X size={20} /></button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-3">
+               {completedTasks.length === 0 ? (
+                 <div className="flex flex-col items-center justify-center opacity-50 py-10">
+                    <Sword size={48} className="mb-4 opacity-50" />
+                    <p className="font-bold">No completed quests yet.</p>
+                 </div>
+               ) : (
+                 completedTasks.map((ct, idx) => (
+                   <div key={idx} className={`flex justify-between items-center p-4 rounded-2xl border ${theme === 'night' ? 'bg-black/20 border-slate-700/50' : 'bg-black/5 border-stone-200'}`}>
+                      <div className="w-[65%]">
+                        <h5 className="font-black text-sm truncate">{ct.title || 'Untitled Task'}</h5>
+                        <p className="text-xs font-medium opacity-70 mt-1 truncate">{ct.subtitle}</p>
+                      </div>
+                      <button onClick={() => handleUndoTask(ct)} className="flex items-center gap-1.5 text-[10px] uppercase font-bold text-amber-600 bg-amber-500/20 px-3 py-2 rounded-xl hover:bg-amber-500/40 border border-amber-500/30 transition-colors shrink-0">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="2" y="6" width="20" height="12" rx="6" transform="rotate(45 12 12)"/>
+                          <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+                          <circle cx="9.5" cy="9.5" r="1" fill="currentColor"/>
+                          <circle cx="14.5" cy="14.5" r="1" fill="currentColor"/>
+                        </svg>
+                        Restore
+                      </button>
+                   </div>
+                 ))
+               )}
             </div>
           </div>
         </div>

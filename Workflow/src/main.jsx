@@ -6,7 +6,7 @@ import {
   Trash2, Pin, Edit2, MinusCircle, Bell, 
   Check, Image as ImageIcon, AlertCircle, UploadCloud, Sword, MoreVertical,
   Copy, LogOut, Skull, ShieldPlus, BarChart3, LogIn,
-  Lock, Unlock
+  Lock, Unlock, ChevronUp, ChevronDown
 } from 'lucide-react';
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
@@ -115,7 +115,7 @@ export default function App() {
   const [rowDragHoverId, setRowDragHoverId] = useState(null); 
   
   const dragTimeoutRef = useRef(null);
-  const dragStartTimeoutRef = useRef(null); // Fixes invisible instant-drop card glitch
+  const dragStartTimeoutRef = useRef(null);
   const angelRef = useRef(null);
 
   const [slashingTask, setSlashingTask] = useState(null);
@@ -133,11 +133,11 @@ export default function App() {
   useEffect(() => { localStorage.setItem('workflow_locked_rows', JSON.stringify(lockedRows)); }, [lockedRows]);
 
   useEffect(() => {
-    if (activeModal || editingTask || slashingTask || graveyardOpen || sidebarOpen) {
+    if (activeModal || editingTask || slashingTask || graveyardOpen || sidebarOpen || showDiamondGame) {
       document.body.style.overflow = 'hidden';
     } else { document.body.style.overflow = 'auto'; }
     return () => { document.body.style.overflow = 'auto'; };
-  }, [activeModal, editingTask, slashingTask, graveyardOpen, sidebarOpen]);
+  }, [activeModal, editingTask, slashingTask, graveyardOpen, sidebarOpen, showDiamondGame]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -150,8 +150,6 @@ export default function App() {
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, [lastScrollY]);
-
-  // NOTE: The effect that auto-jumps cards up empty rows has been removed here per your request!
 
   const triggerNotification = (msg) => {
     if(typeof msg !== 'string') return;
@@ -241,15 +239,16 @@ export default function App() {
     triggerNotification('Restored card from graveyard!');
   };
 
-  // RESTORED DUPLICATE TASK FUNCTION
+  // RESTORED & FIXED DUPLICATE TASK FUNCTION
   const handleDuplicateTask = (task) => {
     const duplicatedTask = {
       ...task,
       id: 'task_' + Date.now() + Math.random().toString(36).substr(2, 5),
-      title: `${task.title} (Copy)`
+      title: `${task.title} (Copy)`,
+      rowId: 'forgotten' // Forces it to spawn in No Priority
     };
     setTasks(prev => [...prev, duplicatedTask]);
-    triggerNotification('Card duplicated!');
+    triggerNotification('Card duplicated to No Priority!');
   };
 
   const toggleCardLock = (e, taskId) => {
@@ -425,6 +424,7 @@ export default function App() {
     handleDragEnd();
   };
 
+  // --- ROW ADD/REMOVE/INSERT ---
   const handleAddRow = () => {
     if (activeBoard.rowCount >= DYNAMIC_COLORS.length) return;
     setBoards(prev => prev.map(b => b.id === activeBoardId ? { ...b, rowCount: b.rowCount + 1 } : b));
@@ -439,6 +439,18 @@ export default function App() {
       return t;
     }));
     setBoards(prev => prev.map(b => b.id === activeBoardId ? { ...b, rowCount: newRowCount } : b));
+  };
+
+  const handleInsertRow = (atIndex) => {
+    if (activeBoard.rowCount >= DYNAMIC_COLORS.length) { triggerNotification("Maximum rows reached."); return; }
+    // Shift all tasks at or below this index down by 1
+    setTasks(prev => prev.map(t => {
+      if (t.boardId === activeBoardId && typeof t.rowId === 'number' && t.rowId >= atIndex) {
+        return { ...t, rowId: t.rowId + 1 };
+      }
+      return t;
+    }));
+    setBoards(prev => prev.map(b => b.id === activeBoardId ? { ...b, rowCount: b.rowCount + 1 } : b));
   };
   // --- RENDERING ---
 
@@ -584,7 +596,7 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-3 mr-20 sm:mr-28">
-          {/* NEW DIAMOND GAME BUTTON */}
+          {/* DIAMOND GAME BUTTON */}
           <button onClick={() => setShowDiamondGame(true)} className="p-2.5 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white shadow-md transition-all">
              <div className="rotate-45 font-black text-sm flex items-center justify-center w-5 h-5">♦</div>
           </button>
@@ -654,26 +666,34 @@ export default function App() {
                           key={task.id} task={task} colorObj={rowStyle} index={index}
                           isDragged={draggedTaskId === task.id} isGrayGhost={grayGhostId === task.id} isDragOver={dragOverTaskId === task.id} isAnimating={animatingTasks.includes(task.id)}
                           isDimmed={globalDragState === 'card' && draggedTaskId !== task.id && draggedRowId !== task.rowId}
-                          onClick={() => setEditingTask(task)} onSlash={() => setSlashingTask(task)} onDuplicate={(e) => { e.stopPropagation(); handleDuplicateTask(task); }} onToggleLock={toggleCardLock}
+                          onClick={() => setEditingTask(task)} onSlash={() => setSlashingTask(task)} onDuplicate={() => handleDuplicateTask(task)} onToggleLock={toggleCardLock}
                           onDragStart={handleDragStartTask} onDragOver={(e) => handleDragOverTask(e, task.id)} onDragLeave={handleDragLeaveTask} onDragEnd={handleDragEnd}
                         />
                       ))}
                     </div>
-                    {/* Row Handle & Lock */}
-                    <div className="w-10 shrink-0 flex flex-col items-center justify-center opacity-30 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => toggleRowLock(rowId)} className="mb-3 hover:scale-110 transition-transform bg-black/10 p-1.5 rounded-md" title={isRowLocked ? "Unlock Row" : "Lock Row"}>
+                    {/* Row Handle, Lock, & Insert Buttons */}
+                    <div className="w-10 shrink-0 flex flex-col items-center justify-center opacity-30 group-hover:opacity-100 transition-opacity gap-2">
+                      <button onClick={() => handleInsertRow(rowId)} className="hover:scale-110 transition-transform bg-emerald-500/20 text-emerald-400 p-1 rounded-md" title="Insert Row Above">
+                         <ChevronUp size={12}/>
+                      </button>
+                      
+                      <button onClick={() => toggleRowLock(rowId)} className="hover:scale-110 transition-transform bg-black/10 p-1.5 rounded-md" title={isRowLocked ? "Unlock Row" : "Lock Row"}>
                         {isRowLocked ? <Lock size={14} className="text-rose-400"/> : <Unlock size={14} className="text-current"/>}
                       </button>
+                      
                       <div draggable={!isRowLocked} onDragStart={(e) => handleDragStartRow(e, rowId)} onDragEnd={handleDragEnd} className={`${isRowLocked ? 'cursor-not-allowed opacity-30' : 'cursor-grab'} flex flex-col items-center p-2 bg-black/5 hover:bg-black/10 rounded-lg transition-colors`}>
                         <div className="flex gap-1 mb-1"><div className="w-1.5 h-1.5 rounded-full bg-current"/><div className="w-1.5 h-1.5 rounded-full bg-current"/></div>
                         <div className="flex gap-1 mb-1"><div className="w-1.5 h-1.5 rounded-full bg-current"/><div className="w-1.5 h-1.5 rounded-full bg-current"/></div>
                         <div className="flex gap-1"><div className="w-1.5 h-1.5 rounded-full bg-current"/><div className="w-1.5 h-1.5 rounded-full bg-current"/></div>
                       </div>
+
+                      <button onClick={() => handleInsertRow(rowId + 1)} className="hover:scale-110 transition-transform bg-emerald-500/20 text-emerald-400 p-1 rounded-md" title="Insert Row Below">
+                         <ChevronDown size={12}/>
+                      </button>
                     </div>
                   </div>
                 );
               })}
-
               {/* NO PRIORITY */}
               <div className="mt-8 pt-4">
                 <div onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDropOnRow(e, 'forgotten')} className={`rounded-3xl p-4 sm:p-5 border-2 border-dashed transition-all ${theme === 'night' ? 'bg-slate-900/40 border-slate-600/50' : 'bg-white/40 border-stone-300/60'} ${globalDragState === 'row' ? 'opacity-40 brightness-75' : ''}`}>
@@ -688,7 +708,7 @@ export default function App() {
                       <TaskCard key={task.id} task={task} colorObj={FORGOTTEN_COLOR} index={index} 
                         isDragged={draggedTaskId === task.id} isGrayGhost={grayGhostId === task.id} isDragOver={dragOverTaskId === task.id} isAnimating={animatingTasks.includes(task.id)} 
                         isDimmed={globalDragState === 'card' && draggedTaskId !== task.id}
-                        onClick={() => setEditingTask(task)} onSlash={() => setSlashingTask(task)} onDuplicate={(e) => { e.stopPropagation(); handleDuplicateTask(task); }} onToggleLock={toggleCardLock}
+                        onClick={() => setEditingTask(task)} onSlash={() => setSlashingTask(task)} onDuplicate={() => handleDuplicateTask(task)} onToggleLock={toggleCardLock}
                         onDragStart={handleDragStartTask} onDragOver={(e) => handleDragOverTask(e, task.id)} onDragLeave={handleDragLeaveTask} onDragEnd={handleDragEnd}/>
                     ))}
                     {tasks.filter(t => t.boardId === activeBoardId && t.rowId === 'forgotten').length === 0 && <div className="w-full text-center py-4 opacity-50 text-xs italic">Drag tasks here to remove priority</div>}
@@ -699,11 +719,13 @@ export default function App() {
           </div>
         </main>
       </div>
-      {/* PERMANENT RIGHT-SIDE TRASH ZONE */}
+
+      {/* PERMANENT RIGHT-SIDE TRASH ZONE - NOW INSTANT REACTION */}
       <div 
+        onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsHoveringTrash(true); }}
         onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsHoveringTrash(true); }}
         onDragLeave={() => setIsHoveringTrash(false)}
-        onDrop={(e) => { e.preventDefault(); if(draggedTaskId) handleDeleteTask(draggedTaskId); handleDragEnd(); }}
+        onDrop={(e) => { e.preventDefault(); setIsHoveringTrash(false); if(draggedTaskId) handleDeleteTask(draggedTaskId); handleDragEnd(); }}
         className={`fixed right-0 top-0 w-20 sm:w-28 h-full z-20 flex flex-col items-center justify-center transition-all border-l border-white/10 ${isHoveringTrash ? 'bg-rose-600/40 backdrop-blur-md' : 'bg-black/20 backdrop-blur-sm hover:bg-black/30'}`}
       >
         <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300 ${isHoveringTrash ? 'bg-rose-500 text-white scale-125 shadow-[0_0_30px_rgba(244,63,94,0.8)]' : 'bg-transparent text-white/30 border-2 border-white/20'}`}>
@@ -721,6 +743,7 @@ export default function App() {
             <h2 className="font-black text-lg tracking-widest uppercase text-zinc-400">Graveyard</h2>
           </div>
           <div className="flex items-center gap-2">
+            {/* NEW CLEAR ALL BUTTON */}
             {deletedTasks.length > 0 && (
               <button onClick={() => { setDeletedTasks([]); triggerNotification('Graveyard cleared forever.'); }} className="flex items-center gap-1 p-1.5 px-3 bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white rounded-lg transition-colors text-[10px] uppercase font-bold tracking-wider">
                 <Trash2 size={12} /> Clear All
@@ -893,14 +916,14 @@ export default function App() {
                         <p className="text-xs font-medium opacity-70 mt-1 truncate">{ct.subtitle}</p>
                       </div>
                       <button onClick={() => handleUndoTask(ct)} className="flex items-center gap-1.5 text-[10px] uppercase font-bold text-amber-600 bg-amber-500/20 px-3 py-2 rounded-xl hover:bg-amber-500/40 border border-amber-500/30 transition-colors shrink-0">
-  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="2" y="6" width="20" height="12" rx="6" transform="rotate(45 12 12)"/>
-    <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
-    <circle cx="9.5" cy="9.5" r="1" fill="currentColor"/>
-    <circle cx="14.5" cy="14.5" r="1" fill="currentColor"/>
-  </svg>
-  Restore
-</button>
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="2" y="6" width="20" height="12" rx="6" transform="rotate(45 12 12)"/>
+                          <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+                          <circle cx="9.5" cy="9.5" r="1" fill="currentColor"/>
+                          <circle cx="14.5" cy="14.5" r="1" fill="currentColor"/>
+                        </svg>
+                        Restore
+                      </button>
                    </div>
                  ))
                )}
@@ -969,7 +992,7 @@ function TaskCard({ task, colorObj, index = 0, isDragged, isGrayGhost, isDragOve
           </button>
           {!task.isLocked && (
             <>
-              <button onClick={(e) => { e.stopPropagation(); onDuplicate(task); }} className="shrink-0 p-1 bg-black/10 hover:bg-black/20 rounded-md transition-colors" title="Duplicate">
+              <button onClick={(e) => { e.stopPropagation(); onDuplicate(); }} className="shrink-0 p-1 bg-black/10 hover:bg-black/20 rounded-md transition-colors" title="Duplicate">
                 <Copy size={12} className="text-current" />
               </button>
               <button onClick={(e) => { e.stopPropagation(); onSlash(task); }} className="shrink-0 p-1 bg-black/10 hover:bg-black/20 rounded-md transition-colors" title="Complete">

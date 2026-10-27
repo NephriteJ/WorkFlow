@@ -40,10 +40,15 @@ const FORGOTTEN_COLOR = { hue: 215, sat: 15, baseL: 40, text: 'text-slate-100' }
 const AVATARS = ['/pfp1.jpeg', '/pfp2.jpeg', '/pfp3.jpeg', '/pfp4.jpeg'];
 
 // SAFE LOCAL STORAGE PARSER
+// SAFE LOCAL STORAGE PARSER
 const safeLoad = (key, fallback) => {
   try {
     const saved = localStorage.getItem(key);
-    return saved ? JSON.parse(saved) : fallback;
+    if (!saved) return fallback;
+    const parsed = JSON.parse(saved);
+    // If the app expects an array (like tasks) but gets something else, use fallback
+    if (Array.isArray(fallback) && !Array.isArray(parsed)) return fallback;
+    return parsed;
   } catch (e) {
     console.error(`Error loading ${key}:`, e);
     return fallback;
@@ -52,7 +57,10 @@ const safeLoad = (key, fallback) => {
 
 export default function App() {
   // --- AUTH & INTRO STATE ---
-  const [currentView, setCurrentView] = useState('splash');
+  // --- AUTH & INTRO STATE ---
+  const [currentView, setCurrentView] = useState(() => {
+    return localStorage.getItem('workflow_auth') === 'true' ? 'main' : 'splash';
+  });
   const [introStage, setIntroStage] = useState(0); 
   const [theme, setTheme] = useState('night'); 
 
@@ -421,8 +429,9 @@ export default function App() {
   }
 
   // MAIN APP VIEW
+  // MAIN APP VIEW
   return (
-    <div className={`relative min-h-screen w-full flex overflow-x-hidden ${theme === 'night' ? 'text-slate-100' : 'text-stone-900'} transition-colors duration-500 font-sans`}>
+    <div className={`relative min-h-screen w-full flex overflow-x-hidden ${theme === 'night' ? 'bg-slate-950 text-slate-100' : 'bg-stone-100 text-stone-900'} transition-colors duration-500 font-sans`}>
       
       {/* Background Layers */}
       <div className="fixed inset-0 w-screen h-screen pointer-events-none z-0 overflow-hidden">

@@ -5,8 +5,7 @@ import {
   Settings, User, Clock, 
   Trash2, Pin, Edit2, MinusCircle, Bell, 
   Check, Image as ImageIcon, AlertCircle, UploadCloud, Sword, MoreVertical,
-  Copy, LogOut, Skull, ShieldPlus, BarChart3, LogIn,
-  Lock, Unlock, ChevronUp, ChevronDown
+  Copy, LogOut, Skull, ShieldPlus, LogIn, ChevronUp, ChevronDown
 } from 'lucide-react';
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
@@ -40,7 +39,7 @@ const DYNAMIC_COLORS = [
 const FORGOTTEN_COLOR = { hue: 215, sat: 15, baseL: 40, text: 'text-slate-100' };
 const AVATARS = ['/pfp1.jpeg', '/pfp2.jpeg', '/pfp3.jpeg', '/pfp4.jpeg'];
 
-// SAFE LOCAL STORAGE PARSER TO PREVENT CRASHES
+// SAFE LOCAL STORAGE PARSER
 const safeLoad = (key, fallback) => {
   try {
     const saved = localStorage.getItem(key);
@@ -60,29 +59,8 @@ export default function App() {
   const [userProfile, setUserProfile] = useState(() => safeLoad('workflow_user', { 
     name: 'Guest Explorer', email: 'Temporary session', avatar: AVATARS[0], isGuest: true, googleId: null 
   }));
-  
-  // --- COIN TRACKING ---
-  const [points, setPoints] = useState(() => {
-    const saved = localStorage.getItem('workflow_points');
-    return saved ? parseInt(saved) : 0;
-  });
-  
-  const [pointsHistory, setPointsHistory] = useState(() => {
-    const loaded = safeLoad('workflow_history', null);
-    if (loaded) return loaded;
-    const history = [];
-    const today = new Date();
-    for(let i = 6; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(d.getDate() - i);
-      const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
-      const dayNum = d.getDate();
-      history.push({ dateKey: d.toLocaleDateString('en-US'), label: `${dayName} ${dayNum}`, value: 0 });
-    }
-    return history;
-  });
 
-  // --- BOARDS, TASKS & LOCKS ---
+  // --- BOARDS & TASKS ---
   const [boards, setBoards] = useState([{ id: 'b1', name: 'Main Board', isPinned: true, rowCount: 5 }]);
   const [activeBoardId, setActiveBoardId] = useState('b1');
   const [boardMenuOpen, setBoardMenuOpen] = useState(null);
@@ -91,7 +69,6 @@ export default function App() {
     { id: 't1', boardId: 'b1', title: 'Title', subtitle: 'Sub title', description: 'Description', rowId: 1, reminder: null, isLocked: false }
   ]));
   
-  const [lockedRows, setLockedRows] = useState(() => safeLoad('workflow_locked_rows', []));
   const [deletedTasks, setDeletedTasks] = useState(() => safeLoad('workflow_deleted', []));
   const [completedTasks, setCompletedTasks] = useState(() => safeLoad('workflow_completed', []));
   const [showDiamondGame, setShowDiamondGame] = useState(false);
@@ -105,7 +82,7 @@ export default function App() {
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const [lastScrollY, setLastScrollY] = useState(0);
 
-  // --- DRAG & DROP WITH GLITCH PREVENTION ---
+  // --- DRAG & DROP STATE ---
   const [globalDragState, setGlobalDragState] = useState(null); 
   const [draggedTaskId, setDraggedTaskId] = useState(null);
   const [grayGhostId, setGrayGhostId] = useState(null); 
@@ -120,17 +97,13 @@ export default function App() {
 
   const [slashingTask, setSlashingTask] = useState(null);
   const [animatingTasks, setAnimatingTasks] = useState([]); 
-  const [flyingCoins, setFlyingCoins] = useState([]);
 
   const activeBoard = boards.find(b => b.id === activeBoardId) || boards[0];
 
   // --- EFFECTS ---
   useEffect(() => { localStorage.setItem('workflow_tasks', JSON.stringify(tasks)); }, [tasks]);
-  useEffect(() => { localStorage.setItem('workflow_points', points.toString()); }, [points]);
-  useEffect(() => { localStorage.setItem('workflow_history', JSON.stringify(pointsHistory)); }, [pointsHistory]);
   useEffect(() => { localStorage.setItem('workflow_completed', JSON.stringify(completedTasks)); }, [completedTasks]);
   useEffect(() => { localStorage.setItem('workflow_deleted', JSON.stringify(deletedTasks)); }, [deletedTasks]);
-  useEffect(() => { localStorage.setItem('workflow_locked_rows', JSON.stringify(lockedRows)); }, [lockedRows]);
 
   useEffect(() => {
     if (activeModal || editingTask || slashingTask || graveyardOpen || sidebarOpen || showDiamondGame) {
@@ -202,7 +175,7 @@ export default function App() {
     setCurrentView('splash'); setIntroStage(0); setSidebarOpen(false);
   };
 
-  // --- TASK & LOCK MANAGEMENT ---
+  // --- TASK MANAGEMENT ---
   const handleCreateTask = () => {
     setEditingTask({
       id: 'task_' + Date.now(), boardId: activeBoardId, title: '', subtitle: '', description: '',
@@ -239,13 +212,13 @@ export default function App() {
     triggerNotification('Restored card from graveyard!');
   };
 
-  // RESTORED & FIXED DUPLICATE TASK FUNCTION
+  // DUPLICATE TASK (Forces to No Priority)
   const handleDuplicateTask = (task) => {
     const duplicatedTask = {
       ...task,
       id: 'task_' + Date.now() + Math.random().toString(36).substr(2, 5),
       title: `${task.title} (Copy)`,
-      rowId: 'forgotten' // Forces it to spawn in No Priority
+      rowId: 'forgotten' 
     };
     setTasks(prev => [...prev, duplicatedTask]);
     triggerNotification('Card duplicated to No Priority!');
@@ -256,53 +229,13 @@ export default function App() {
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, isLocked: !t.isLocked } : t));
   };
 
-  const toggleRowLock = (rowId) => {
-    setLockedRows(prev => prev.includes(rowId) ? prev.filter(id => id !== rowId) : [...prev, rowId]);
-  };
-
-  // --- COIN, CALENDAR & ANGEL LOGIC ---
-  const spawnFlyingCoins = () => {
-    const rect = angelRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const newCoins = Array.from({ length: 5 }).map((_, i) => ({
-      id: Date.now() + i, targetX: rect.left + rect.width / 2, targetY: rect.top + rect.height / 2
-    }));
-    setFlyingCoins(newCoins);
-    setTimeout(() => setFlyingCoins([]), 1000);
-  };
-
-  const updateCalendarPoints = (earnedPoints) => {
-    const today = new Date();
-    const todayKey = today.toLocaleDateString('en-US'); 
-    setPointsHistory(prev => {
-      let newHistory = [...prev];
-      const todayIndex = newHistory.findIndex(d => d.dateKey === todayKey);
-      if (todayIndex !== -1) newHistory[todayIndex].value = Math.max(0, newHistory[todayIndex].value + earnedPoints);
-      else {
-        newHistory.shift();
-        const dayName = today.toLocaleDateString('en-US', { weekday: 'short' });
-        const dayNum = today.getDate();
-        newHistory.push({ dateKey: todayKey, label: `${dayName} ${dayNum}`, value: Math.max(0, earnedPoints) });
-      }
-      return newHistory;
-    });
-  };
-
+  // --- TASK COMPLETION ---
   const handleCompleteTask = () => {
     if (!slashingTask || slashingTask.isLocked) return;
-    let earnedPoints = 1;
-    if (slashingTask.rowId !== 'forgotten') earnedPoints = Math.max(10 - 2 * (parseInt(slashingTask.rowId) - 1), 1);
-    
-    spawnFlyingCoins();
-    setTimeout(() => {
-      setPoints(p => p + earnedPoints);
-      updateCalendarPoints(earnedPoints);
-      triggerNotification(`+${earnedPoints} Points!`);
-    }, 600);
-
     setAnimatingTasks(prev => [...prev, slashingTask.id]);
-    setCompletedTasks(prev => [{ ...slashingTask, earnedPoints, completedAt: Date.now() }, ...(prev || [])]);
+    setCompletedTasks(prev => [{ ...slashingTask, completedAt: Date.now() }, ...(prev || [])]);
     setSlashingTask(null);
+    triggerNotification(`Quest Completed!`);
 
     setTimeout(() => {
       setTasks(prev => prev.filter(t => t.id !== slashingTask.id));
@@ -312,23 +245,20 @@ export default function App() {
 
   const handleUndoTask = (completedTask) => {
     if (!completedTask || !completedTask.id) return;
-    setPoints(p => Math.max(0, p - (completedTask.earnedPoints || 0)));
-    updateCalendarPoints(-(completedTask.earnedPoints || 0)); 
-    
     setCompletedTasks(prev => (prev || []).filter(t => t.id !== completedTask.id));
     const restoredTask = { ...completedTask };
-    delete restoredTask.earnedPoints; delete restoredTask.completedAt;
+    delete restoredTask.completedAt;
     
     if (typeof restoredTask.rowId === 'number' && restoredTask.rowId > activeBoard.rowCount) {
       restoredTask.rowId = activeBoard.rowCount;
     }
     setTasks(prev => [...prev, restoredTask]);
-    triggerNotification('Card restored and points adjusted.');
+    triggerNotification('Card restored.');
   };
 
   // --- DRAG AND DROP HANDLERS ---
   const handleDragStartTask = (e, task) => {
-    if (task.isLocked || lockedRows.includes(task.rowId)) { e.preventDefault(); return; }
+    if (task.isLocked) { e.preventDefault(); return; }
     e.dataTransfer.setData('text/plain', task.id); 
     e.dataTransfer.effectAllowed = 'move';
     setGlobalDragState('card');
@@ -340,7 +270,6 @@ export default function App() {
   };
 
   const handleDragStartRow = (e, rowId) => {
-    if (lockedRows.includes(rowId)) { e.preventDefault(); return; }
     e.stopPropagation(); 
     setGlobalDragState('row');
     setDraggedRowId(rowId); 
@@ -386,10 +315,6 @@ export default function App() {
   const handleDropOnRow = (e, targetRowId) => {
     e.preventDefault(); e.stopPropagation();
     if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
-    if (lockedRows.includes(targetRowId)) {
-      triggerNotification("Target row is locked.");
-      handleDragEnd(); return;
-    }
 
     const taskId = e.dataTransfer.getData('text/plain');
     const sourceRowId = e.dataTransfer.getData('text/rowId');
@@ -424,23 +349,7 @@ export default function App() {
     handleDragEnd();
   };
 
-  // --- ROW ADD/REMOVE/INSERT ---
-  const handleAddRow = () => {
-    if (activeBoard.rowCount >= DYNAMIC_COLORS.length) return;
-    setBoards(prev => prev.map(b => b.id === activeBoardId ? { ...b, rowCount: b.rowCount + 1 } : b));
-  };
-
-  const handleRemoveRow = () => {
-    if (activeBoard.rowCount <= 1) return;
-    const oldRowCount = activeBoard.rowCount; const newRowCount = oldRowCount - 1;
-    if (lockedRows.includes(oldRowCount)) { triggerNotification("Cannot remove a locked row."); return; }
-    setTasks(prev => prev.map(t => {
-      if (t.boardId === activeBoardId && t.rowId === oldRowCount) return { ...t, rowId: newRowCount };
-      return t;
-    }));
-    setBoards(prev => prev.map(b => b.id === activeBoardId ? { ...b, rowCount: newRowCount } : b));
-  };
-
+  // --- ROW MANAGEMENT (INSERT & DELETE) ---
   const handleInsertRow = (atIndex) => {
     if (activeBoard.rowCount >= DYNAMIC_COLORS.length) { triggerNotification("Maximum rows reached."); return; }
     // Shift all tasks at or below this index down by 1
@@ -451,6 +360,27 @@ export default function App() {
       return t;
     }));
     setBoards(prev => prev.map(b => b.id === activeBoardId ? { ...b, rowCount: b.rowCount + 1 } : b));
+  };
+
+  const handleDeleteRow = (rowIdToDelete) => {
+    if (activeBoard.rowCount <= 1) { triggerNotification("Cannot delete the last row."); return; }
+    
+    // Move tasks in this row to deleted list
+    const tasksInRow = tasks.filter(t => t.boardId === activeBoardId && t.rowId === rowIdToDelete);
+    if (tasksInRow.length > 0) {
+      setDeletedTasks(prev => [...tasksInRow.map(t => ({ ...t, deletedAt: Date.now() })), ...prev]);
+    }
+    
+    // Remove tasks and shift remaining rows up
+    setTasks(prev => prev.filter(t => !(t.boardId === activeBoardId && t.rowId === rowIdToDelete)).map(t => {
+      if (t.boardId === activeBoardId && typeof t.rowId === 'number' && t.rowId > rowIdToDelete) {
+        return { ...t, rowId: t.rowId - 1 };
+      }
+      return t;
+    }));
+    
+    setBoards(prev => prev.map(b => b.id === activeBoardId ? { ...b, rowCount: b.rowCount - 1 } : b));
+    triggerNotification("Row deleted.");
   };
   // --- RENDERING ---
 
@@ -465,18 +395,11 @@ export default function App() {
         <div className="absolute inset-0 opacity-30 mix-blend-overlay" style={{ backgroundImage: 'url("https://www.transparenttextures.com/patterns/stardust.png")' }}></div>
 
         <div className={`flex flex-col items-center text-center max-w-md w-full z-10 transition-all duration-1000 ease-in-out ${introStage > 0 ? '-translate-y-32' : ''}`}>
-          
           <div className={`relative mb-6 transition-all duration-1000 ease-in-out ${introStage > 0 ? 'scale-125 translate-y-[-10px] shadow-[0_0_100px_rgba(251,191,36,0.8)]' : 'shadow-[0_10px_35px_rgba(251,191,36,0.4)] animate-bounce'} w-28 h-28 rounded-3xl bg-gradient-to-tr from-amber-300 to-yellow-100 flex items-center justify-center border-4 border-amber-200 overflow-hidden`}>
             <img src="/icon-512.png" alt="WorkFlow Logo" className="w-[85%] h-[85%] object-contain drop-shadow-md" />
           </div>
-
           <h1 className="text-4xl sm:text-5xl font-black tracking-tight drop-shadow-md mb-2 text-white">WorkFlow</h1>
-          
-          {introStage === 0 && (
-            <p className="text-amber-200 font-bold tracking-wider uppercase text-sm sm:text-base mt-8 animate-pulse drop-shadow-md">
-              Tap anywhere to start
-            </p>
-          )}
+          {introStage === 0 && <p className="text-amber-200 font-bold tracking-wider uppercase text-sm sm:text-base mt-8 animate-pulse drop-shadow-md">Tap anywhere to start</p>}
 
           <div className={`w-full space-y-6 px-2 absolute top-1/2 left-1/2 -translate-x-1/2 transition-all duration-1000 ${introStage > 0 ? 'opacity-100 translate-y-32' : 'opacity-0 translate-y-48 pointer-events-none'}`}>
             <button onClick={handleGoogleLogin} className="w-full py-4 px-6 rounded-2xl bg-white text-stone-900 font-bold text-base shadow-xl hover:bg-gray-100 active:scale-95 transition-all flex items-center justify-center gap-3">
@@ -488,16 +411,9 @@ export default function App() {
               </svg>
               <span>Continue with Google</span>
             </button>
-
             <button onClick={handleGuestLogin} className="w-full mt-4 py-4 px-6 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold text-sm backdrop-blur-md active:scale-95 transition-all flex items-center justify-center gap-2">
-              <User size={18} />
-              <span>Enter as Guest</span>
+              <User size={18} /><span>Enter as Guest</span>
             </button>
-
-            <div className="flex flex-col items-center justify-center gap-1.5 text-[11px] text-amber-100/70 pt-3 leading-relaxed text-center px-4">
-              <span className="flex items-center gap-1 font-bold text-amber-300"><AlertCircle size={12} /> Privacy Warning</span>
-              <span>Guest mode runs entirely in this browser. Progress will vanish if history is cleared.</span>
-            </div>
           </div>
         </div>
       </div>
@@ -524,21 +440,7 @@ export default function App() {
         .anim-split-top { animation: split-top 0.6s ease-out forwards; clip-path: polygon(0 0, 100% 0, 100% 50%, 0 45%); }
         .anim-split-bottom { animation: split-bottom 0.6s ease-out forwards; clip-path: polygon(0 45%, 100% 50%, 100% 100%, 0 100%); }
         .broken-bottom { clip-path: polygon(0 0, 100% 0, 100% 90%, 95% 100%, 85% 90%, 75% 100%, 65% 90%, 55% 100%, 45% 90%, 35% 100%, 25% 90%, 15% 100%, 5% 90%, 0 100%); }
-        
-        @keyframes fly-to-angel {
-          0% { transform: translate(-50%, -50%) scale(1); opacity: 1; left: 50vw; top: 50vh; }
-          100% { transform: translate(-50%, -50%) scale(0.3); opacity: 0; left: var(--tx); top: var(--ty); }
-        }
-        .coin-anim { animation: fly-to-angel 0.6s cubic-bezier(0.25, 1, 0.5, 1) forwards; }
       `}} />
-
-      {/* Flying Coins Animation */}
-      {flyingCoins.map((coin, index) => (
-        <div key={coin.id} className="fixed z-[100] coin-anim w-8 h-8 rounded-full bg-gradient-to-br from-yellow-300 to-yellow-600 flex items-center justify-center border-2 border-yellow-100 shadow-[0_0_20px_rgba(251,191,36,0.8)]"
-             style={{ '--tx': `${coin.targetX}px`, '--ty': `${coin.targetY}px`, animationDelay: `${index * 0.05}s` }}>
-          <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2.5" fill="none" className="text-yellow-900"><path d="M7 6l2 3 3-4 3 4 2-3v4H7z" fill="currentColor"/></svg>
-        </div>
-      ))}
 
       {notificationBanner && (
         <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 bg-slate-900/90 text-white px-5 py-2.5 rounded-full shadow-2xl backdrop-blur-md border border-white/20 text-xs sm:text-sm font-medium flex items-center gap-2 animate-bounce">
@@ -563,40 +465,27 @@ export default function App() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-1">
-          <button onClick={() => { setActiveModal('account'); setSidebarOpen(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-black/5 transition-colors text-sm font-medium">
-            <User size={18} className="text-amber-500" /> <span>Profile / Avatars</span>
-          </button>
           <button onClick={() => { setActiveModal('settings'); setSidebarOpen(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-black/5 transition-colors text-sm font-medium">
             <Settings size={18} className="text-emerald-500" /> <span>Settings</span>
           </button>
         </div>
         
         <div className="p-4 border-t border-inherit space-y-2">
-           {userProfile.isGuest && (
-             <button onClick={() => { handleSignOut(); }} className="w-full flex items-center justify-center gap-3 px-3 py-3 rounded-xl text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors text-sm font-bold">
-               <LogIn size={18} /> <span>Sign In / Up</span>
-             </button>
-           )}
            <button onClick={handleSignOut} className="w-full flex items-center justify-center gap-3 px-3 py-3 rounded-xl text-rose-500 bg-rose-500/10 hover:bg-rose-500/20 transition-colors text-sm font-bold">
              <LogOut size={18} /> <span>{userProfile.isGuest ? 'Exit Guest Mode' : 'Sign Out'}</span>
            </button>
         </div>
       </aside>
 
-      {/* HEADER (Sticky & Scroll Responsive) */}
+      {/* HEADER */}
       <header className={`fixed top-0 w-full z-30 px-4 sm:px-6 py-3 flex items-center justify-between backdrop-blur-md bg-black/10 transition-transform duration-500 ease-in-out ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}>
         <div className="flex items-center gap-3">
           <button onClick={() => setSidebarOpen(true)} className={`p-2 rounded-xl active:scale-95 transition-all ${theme === 'night' ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-black/10 hover:bg-black/20 text-stone-900'}`}>
             <AlignLeft size={22} />
           </button>
-          <button onClick={() => setActiveModal('graph')} className="flex items-center gap-2 bg-gradient-to-r from-amber-500/20 to-orange-500/20 px-3 py-1.5 rounded-full border border-amber-500/30 backdrop-blur-md shadow-sm hover:scale-105 transition-transform cursor-pointer">
-            <BarChart3 size={16} className="text-amber-400" />
-            <span className="font-black text-amber-500 text-sm tracking-wide">{points} pts</span>
-          </button>
         </div>
 
         <div className="flex items-center gap-3 mr-20 sm:mr-28">
-          {/* DIAMOND GAME BUTTON */}
           <button onClick={() => setShowDiamondGame(true)} className="p-2.5 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white shadow-md transition-all">
              <div className="rotate-45 font-black text-sm flex items-center justify-center w-5 h-5">♦</div>
           </button>
@@ -612,14 +501,36 @@ export default function App() {
         </div>
       </header>
 
+      {/* NEW: FIXED LEFT SIDEBAR FOR NO PRIORITY */}
+      <div 
+        onDragOver={(e) => e.preventDefault()} 
+        onDrop={(e) => handleDropOnRow(e, 'forgotten')} 
+        className={`fixed left-0 top-20 bottom-0 w-[200px] p-3 overflow-y-auto z-20 border-r-2 border-dashed transition-all hidden sm:block ${theme === 'night' ? 'bg-slate-900/40 border-slate-600/50' : 'bg-white/40 border-stone-300/60'} ${globalDragState === 'row' ? 'opacity-40 brightness-75' : ''}`}
+      >
+        <div className="flex items-center gap-2 mb-4 px-1">
+          <div className="w-3 h-3 rounded-full bg-slate-400"></div>
+          <h3 className={`text-xs uppercase font-extrabold tracking-widest ${theme === 'night' ? 'text-slate-300' : 'text-stone-600'}`}>No Priority</h3>
+        </div>
+        
+        <div className="flex flex-col gap-3 items-center pb-10">
+          {tasks.filter(t => t.boardId === activeBoardId && t.rowId === 'forgotten').map((task, index) => (
+            <TaskCard key={task.id} task={task} colorObj={FORGOTTEN_COLOR} index={index} 
+              isDragged={draggedTaskId === task.id} isGrayGhost={grayGhostId === task.id} isDragOver={dragOverTaskId === task.id} isAnimating={animatingTasks.includes(task.id)} 
+              isDimmed={globalDragState === 'card' && draggedTaskId !== task.id}
+              onClick={() => setEditingTask(task)} onSlash={() => setSlashingTask(task)} onDuplicate={() => handleDuplicateTask(task)} onToggleLock={toggleCardLock}
+              onDragStart={handleDragStartTask} onDragOver={(e) => handleDragOverTask(e, task.id)} onDragLeave={handleDragLeaveTask} onDragEnd={handleDragEnd}/>
+          ))}
+          {tasks.filter(t => t.boardId === activeBoardId && t.rowId === 'forgotten').length === 0 && <div className="w-full text-center py-4 opacity-50 text-xs italic">Drag tasks here</div>}
+        </div>
+      </div>
+
       {/* MAIN LEADERBOARD BODY */}
-      <div className="relative z-10 flex-1 flex flex-col min-h-screen pt-20 pr-20 sm:pr-28">
+      <div className="relative z-10 flex-1 flex flex-col min-h-screen pt-20 pl-[10px] sm:pl-[210px] pr-20 sm:pr-28 transition-all">
         <main className="flex-1 w-full max-w-5xl mx-auto px-3 sm:px-6 py-4 pb-36 relative">
           <div className="flex items-start gap-3 sm:gap-6 relative">
             
-            {/* CENTRAL LEADERBOARD SPINE & ANGEL */}
+            {/* CENTRAL LEADERBOARD SPINE (Removed + and -) */}
             <div className="flex flex-col items-center shrink-0 select-none relative z-10 pt-2">
-              
               <div 
                 ref={angelRef}
                 onClick={() => setActiveModal('treasure')}
@@ -632,13 +543,8 @@ export default function App() {
 
               <div 
                 className="w-3.5 sm:w-4 rounded-full -mt-4 shadow-inner bg-gradient-to-b from-amber-400 via-rose-500 via-purple-600 via-blue-600 to-cyan-500 transition-all duration-300 z-0 relative"
-                style={{ height: `${(activeBoard.rowCount * 115) + 30}px` }}
+                style={{ height: `${(activeBoard.rowCount * 115)}px` }}
               />
-
-              <div className="flex flex-col items-center gap-1.5 pt-2 relative z-10">
-                <button onClick={handleAddRow} className={`w-8 h-8 rounded-full flex items-center justify-center border hover:scale-110 active:scale-90 transition-all ${theme === 'night' ? 'bg-amber-500/20 border-amber-500/40 text-amber-400' : 'bg-amber-100 border-amber-300 text-amber-700'}`}><Plus size={16} strokeWidth={2.5} /></button>
-                {activeBoard.rowCount > 1 && <button onClick={handleRemoveRow} className={`w-8 h-8 rounded-full flex items-center justify-center border hover:scale-110 active:scale-90 transition-all ${theme === 'night' ? 'bg-rose-500/20 border-rose-500/40 text-rose-400' : 'bg-rose-100 border-rose-300 text-rose-700'}`}><MinusCircle size={16} /></button>}
-              </div>
             </div>
 
             {/* TASK ROWS */}
@@ -649,7 +555,6 @@ export default function App() {
                 const rowTasks = tasks.filter(t => t.boardId === activeBoardId && t.rowId === rowId);
                 const isRowLocked = lockedRows.includes(rowId);
                 
-                // Dimming Logic for rows being held vs not
                 const isRowBeingDragged = globalDragState === 'row' && draggedRowId === rowId;
                 const isDimmedRow = globalDragState === 'row' && draggedRowId !== rowId;
 
@@ -671,14 +576,15 @@ export default function App() {
                         />
                       ))}
                     </div>
-                    {/* Row Handle, Lock, & Insert Buttons */}
+                    {/* Row Handle, Delete Row & Insert Buttons */}
                     <div className="w-10 shrink-0 flex flex-col items-center justify-center opacity-30 group-hover:opacity-100 transition-opacity gap-2">
                       <button onClick={() => handleInsertRow(rowId)} className="hover:scale-110 transition-transform bg-emerald-500/20 text-emerald-400 p-1 rounded-md" title="Insert Row Above">
                          <ChevronUp size={12}/>
                       </button>
                       
-                      <button onClick={() => toggleRowLock(rowId)} className="hover:scale-110 transition-transform bg-black/10 p-1.5 rounded-md" title={isRowLocked ? "Unlock Row" : "Lock Row"}>
-                        {isRowLocked ? <Lock size={14} className="text-rose-400"/> : <Unlock size={14} className="text-current"/>}
+                      {/* NEW DELETE ROW BUTTON */}
+                      <button onClick={() => handleDeleteRow(rowId)} className="hover:scale-110 transition-transform bg-rose-500/10 text-rose-500 p-1.5 rounded-md" title="Delete Entire Row">
+                         <Trash2 size={14}/>
                       </button>
                       
                       <div draggable={!isRowLocked} onDragStart={(e) => handleDragStartRow(e, rowId)} onDragEnd={handleDragEnd} className={`${isRowLocked ? 'cursor-not-allowed opacity-30' : 'cursor-grab'} flex flex-col items-center p-2 bg-black/5 hover:bg-black/10 rounded-lg transition-colors`}>
@@ -694,33 +600,11 @@ export default function App() {
                   </div>
                 );
               })}
-              {/* NO PRIORITY */}
-              <div className="mt-8 pt-4">
-                <div onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDropOnRow(e, 'forgotten')} className={`rounded-3xl p-4 sm:p-5 border-2 border-dashed transition-all ${theme === 'night' ? 'bg-slate-900/40 border-slate-600/50' : 'bg-white/40 border-stone-300/60'} ${globalDragState === 'row' ? 'opacity-40 brightness-75' : ''}`}>
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-slate-400"></div>
-                      <h3 className={`text-xs uppercase font-extrabold tracking-widest ${theme === 'night' ? 'text-slate-300' : 'text-stone-600'}`}>No Priority</h3>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2 sm:gap-3 items-center min-h-[90px]">
-                    {tasks.filter(t => t.boardId === activeBoardId && t.rowId === 'forgotten').map((task, index) => (
-                      <TaskCard key={task.id} task={task} colorObj={FORGOTTEN_COLOR} index={index} 
-                        isDragged={draggedTaskId === task.id} isGrayGhost={grayGhostId === task.id} isDragOver={dragOverTaskId === task.id} isAnimating={animatingTasks.includes(task.id)} 
-                        isDimmed={globalDragState === 'card' && draggedTaskId !== task.id}
-                        onClick={() => setEditingTask(task)} onSlash={() => setSlashingTask(task)} onDuplicate={() => handleDuplicateTask(task)} onToggleLock={toggleCardLock}
-                        onDragStart={handleDragStartTask} onDragOver={(e) => handleDragOverTask(e, task.id)} onDragLeave={handleDragLeaveTask} onDragEnd={handleDragEnd}/>
-                    ))}
-                    {tasks.filter(t => t.boardId === activeBoardId && t.rowId === 'forgotten').length === 0 && <div className="w-full text-center py-4 opacity-50 text-xs italic">Drag tasks here to remove priority</div>}
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </main>
       </div>
-
-      {/* PERMANENT RIGHT-SIDE TRASH ZONE - NOW INSTANT REACTION */}
+      {/* PERMANENT RIGHT-SIDE TRASH ZONE - INSTANT REACTION */}
       <div 
         onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsHoveringTrash(true); }}
         onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsHoveringTrash(true); }}
@@ -743,7 +627,6 @@ export default function App() {
             <h2 className="font-black text-lg tracking-widest uppercase text-zinc-400">Graveyard</h2>
           </div>
           <div className="flex items-center gap-2">
-            {/* NEW CLEAR ALL BUTTON */}
             {deletedTasks.length > 0 && (
               <button onClick={() => { setDeletedTasks([]); triggerNotification('Graveyard cleared forever.'); }} className="flex items-center gap-1 p-1.5 px-3 bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white rounded-lg transition-colors text-[10px] uppercase font-bold tracking-wider">
                 <Trash2 size={12} /> Clear All
@@ -857,81 +740,6 @@ export default function App() {
         </div>
       )}
 
-      {/* GRAPH MODAL (Points History) */}
-      {activeModal === 'graph' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setActiveModal(null)} />
-          <div className="relative w-full max-w-2xl h-[70vh] flex flex-col rounded-[2.5rem] shadow-[0_0_100px_rgba(251,191,36,0.5)] overflow-hidden bg-gradient-to-br from-yellow-300 via-amber-500 to-orange-600 border-4 border-amber-200 animate-in zoom-in-95 duration-300">
-            
-            <div className="flex justify-between items-center p-6 border-b border-white/20 bg-black/20 backdrop-blur-md z-20">
-              <h3 className="font-black text-2xl text-white flex items-center gap-3 drop-shadow-md">
-                <BarChart3 size={28} />
-                Coins Collected
-              </h3>
-              <button onClick={() => setActiveModal(null)} className="p-2.5 rounded-full hover:bg-white/20 text-white transition-colors"><X size={24} strokeWidth={3} /></button>
-            </div>
-
-            <div className="flex-1 p-6 z-20 flex items-end justify-between gap-2 overflow-x-auto">
-               {pointsHistory.map((day, idx) => {
-                 const maxVal = Math.max(...pointsHistory.map(d => d.value));
-                 const heightPercent = maxVal === 0 ? 0 : (day.value / maxVal) * 100;
-                 return (
-                   <div key={idx} className="flex flex-col items-center justify-end h-full flex-1 min-w-[50px] group">
-                      <span className="font-black text-white text-lg mb-2 opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md">{day.value}</span>
-                      <div className="w-full max-w-[40px] bg-white/40 rounded-t-xl hover:bg-white/60 transition-all border-t-2 border-l-2 border-r-2 border-white/50" style={{ height: `${heightPercent}%`, minHeight: '4px' }}></div>
-                      <span className="text-[10px] font-bold text-white uppercase tracking-wider mt-4 whitespace-nowrap opacity-80">{day.label}</span>
-                   </div>
-                 );
-               })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* COMPLETED TASKS (Angel/Crown Modal WITH BANDAGE RESTORE) */}
-      {activeModal === 'treasure' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setActiveModal(null)} />
-          <div className={`relative w-full max-w-md max-h-[85vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden ${theme === 'night' ? 'bg-[#1a1040] border-amber-500/20 text-white' : 'bg-white border-amber-200 text-stone-900'} border animate-in zoom-in-95 duration-300`}>
-            
-            <div className={`flex justify-between items-center p-6 border-b ${theme === 'night' ? 'border-amber-500/20 bg-black/20' : 'border-amber-500/10 bg-amber-50/50'}`}>
-              <h3 className="font-black text-xl text-amber-500 flex items-center gap-2">
-                <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path d="M4 17L2 5l6.5 4.5L12 2l3.5 7.5L22 5l-2 12H4zm16 2c0 .6-.4 1-1 1H5c-.6 0-1-.4-1-1v-1h16v1z"/></svg>
-                Completed Quests
-              </h3>
-              <button onClick={() => setActiveModal(null)} className="p-2 rounded-full hover:bg-black/10 transition-colors"><X size={20} /></button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-6 space-y-3">
-               {completedTasks.length === 0 ? (
-                 <div className="flex flex-col items-center justify-center opacity-50 py-10">
-                    <Sword size={48} className="mb-4 opacity-50" />
-                    <p className="font-bold">No completed quests yet.</p>
-                 </div>
-               ) : (
-                 completedTasks.map((ct, idx) => (
-                   <div key={idx} className={`flex justify-between items-center p-4 rounded-2xl border ${theme === 'night' ? 'bg-black/20 border-slate-700/50' : 'bg-black/5 border-stone-200'}`}>
-                      <div className="w-[65%]">
-                        <h5 className="font-black text-sm truncate">{ct.title || 'Untitled Task'}</h5>
-                        <p className="text-xs font-medium opacity-70 mt-1 truncate">{ct.subtitle}</p>
-                      </div>
-                      <button onClick={() => handleUndoTask(ct)} className="flex items-center gap-1.5 text-[10px] uppercase font-bold text-amber-600 bg-amber-500/20 px-3 py-2 rounded-xl hover:bg-amber-500/40 border border-amber-500/30 transition-colors shrink-0">
-                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <rect x="2" y="6" width="20" height="12" rx="6" transform="rotate(45 12 12)"/>
-                          <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
-                          <circle cx="9.5" cy="9.5" r="1" fill="currentColor"/>
-                          <circle cx="14.5" cy="14.5" r="1" fill="currentColor"/>
-                        </svg>
-                        Restore
-                      </button>
-                   </div>
-                 ))
-               )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* THE DIAMOND GAME POPUP */}
       {showDiamondGame && <DiamondGame onClose={() => setShowDiamondGame(false)} />}
       
@@ -970,7 +778,9 @@ function TaskCard({ task, colorObj, index = 0, isDragged, isGrayGhost, isDragOve
     );
   }
 
-  if (isDragged) return <div className="hidden" />;
+  // FIX: Using opacity-0 keeps it in the DOM, so onDragEnd fires if dropped outside!
+  if (isDragged) return <div className="w-[170px] h-[75px] shrink-0 opacity-0 pointer-events-none" />;
+  
   const dimClass = isDimmed ? 'opacity-40 brightness-75 scale-95' : 'opacity-100 scale-100';
 
   return (

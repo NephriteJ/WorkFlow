@@ -39,7 +39,7 @@ const DYNAMIC_COLORS = [
 const FORGOTTEN_COLOR = { hue: 215, sat: 15, baseL: 40, text: 'text-slate-100' };
 const AVATARS = ['/pfp1.jpeg', '/pfp2.jpeg', '/pfp3.jpeg', '/pfp4.jpeg'];
 
-// ROBUST LOCAL STORAGE PARSER (Prevents blank screen crashes)
+// ROBUST LOCAL STORAGE PARSER
 const safeLoad = (key, fallback) => {
   try {
     const saved = localStorage.getItem(key);
@@ -55,10 +55,7 @@ const safeLoad = (key, fallback) => {
 
 export default function App() {
   // --- AUTH & INTRO STATE ---
-  // Fix: Auto-skip splash screen if auth token is present
-  const [currentView, setCurrentView] = useState(() => {
-    return localStorage.getItem('workflow_auth') === 'true' ? 'main' : 'splash';
-  });
+  const [currentView, setCurrentView] = useState('splash'); // ALWAYS shows splash screen first
   const [introStage, setIntroStage] = useState(0); 
   const [theme, setTheme] = useState('night'); 
 
@@ -69,7 +66,6 @@ export default function App() {
   // --- BOARDS & TASKS ---
   const [boards, setBoards] = useState([{ id: 'b1', name: 'Main Board', isPinned: true, rowCount: 5 }]);
   const [activeBoardId, setActiveBoardId] = useState('b1');
-  const [boardMenuOpen, setBoardMenuOpen] = useState(null);
 
   const [tasks, setTasks] = useState(() => safeLoad('workflow_tasks', [
     { id: 't1', boardId: 'b1', title: 'Title', subtitle: 'Sub title', description: 'Description', rowId: 1, reminder: null, isLocked: false }
@@ -272,7 +268,7 @@ export default function App() {
     setGlobalDragState('card');
     setGrayGhostId(task.id); 
     
-    // FIX: Strict timeout so instant drops cancel safely and don't turn invisible
+    // Strict timeout so instant drops cancel safely
     if (dragStartTimeoutRef.current) clearTimeout(dragStartTimeoutRef.current);
     dragStartTimeoutRef.current = setTimeout(() => setDraggedTaskId(task.id), 10);
   };
@@ -474,6 +470,9 @@ export default function App() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-1">
+          <button onClick={() => { setActiveModal('account'); setSidebarOpen(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-black/5 transition-colors text-sm font-medium">
+            <User size={18} className="text-amber-500" /> <span>Profile / Avatars</span>
+          </button>
           <button onClick={() => { setActiveModal('settings'); setSidebarOpen(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-black/5 transition-colors text-sm font-medium">
             <Settings size={18} className="text-emerald-500" /> <span>Settings</span>
           </button>
@@ -494,7 +493,7 @@ export default function App() {
           </button>
         </div>
 
-        <div className="flex items-center gap-3 mr-20 sm:mr-28">
+        <div className="flex items-center gap-3 mr-[280px] sm:mr-[340px]">
           <button onClick={() => setShowDiamondGame(true)} className="p-2.5 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white shadow-md transition-all">
              <div className="rotate-45 font-black text-sm flex items-center justify-center w-5 h-5">♦</div>
           </button>
@@ -510,11 +509,11 @@ export default function App() {
         </div>
       </header>
 
-      {/* NEW: FIXED LEFT SIDEBAR FOR NO PRIORITY */}
+      {/* NEW: FIXED RIGHT SIDEBAR FOR NO PRIORITY (Wedged between rows and trash) */}
       <div 
         onDragOver={(e) => e.preventDefault()} 
         onDrop={(e) => handleDropOnRow(e, 'forgotten')} 
-        className={`fixed left-0 top-20 bottom-0 w-[200px] p-3 overflow-y-auto z-20 border-r-2 border-dashed transition-all hidden sm:block custom-scrollbar ${theme === 'night' ? 'bg-slate-900/40 border-slate-600/50' : 'bg-white/40 border-stone-300/60'} ${globalDragState === 'row' ? 'opacity-40 brightness-75' : ''}`}
+        className={`fixed right-20 sm:right-28 top-20 bottom-0 w-[200px] p-3 overflow-y-auto z-20 border-l-2 border-dashed transition-all hidden sm:block custom-scrollbar ${theme === 'night' ? 'bg-slate-900/40 border-slate-600/50' : 'bg-white/40 border-stone-300/60'} ${globalDragState === 'row' ? 'opacity-40 brightness-75' : ''}`}
       >
         <div className="flex items-center gap-2 mb-4 px-1 sticky top-0 bg-transparent backdrop-blur-md z-10 py-2">
           <div className="w-3 h-3 rounded-full bg-slate-400"></div>
@@ -534,7 +533,7 @@ export default function App() {
       </div>
 
       {/* MAIN LEADERBOARD BODY */}
-      <div className="relative z-10 flex-1 flex flex-col min-h-screen pt-20 pl-[10px] sm:pl-[210px] pr-20 sm:pr-28 transition-all">
+      <div className="relative z-10 flex-1 flex flex-col min-h-screen pt-20 px-[10px] pr-[290px] sm:pr-[330px] transition-all">
         <main className="flex-1 w-full max-w-5xl mx-auto px-3 sm:px-6 py-4 pb-36 relative">
           <div className="flex items-start gap-3 sm:gap-6 relative">
             
@@ -831,10 +830,9 @@ function TaskCard({ task, colorObj, index = 0, isDragged, isGrayGhost, isDragOve
     );
   }
 
-  // FIX: Using opacity-0 keeps it in the DOM, so onDragEnd fires if dropped outside!
-  if (isDragged) return <div className="w-[170px] h-[75px] shrink-0 opacity-0 pointer-events-none" />;
-  
-  const dimClass = isDimmed ? 'opacity-40 brightness-75 scale-95' : 'opacity-100 scale-100';
+  // FIX: Instead of hiding, we show the card visually dim/dashed so it doesn't leave the DOM!
+  const dragClass = isDragged ? 'opacity-40 border-dashed scale-95 grayscale' : '';
+  const dimClass = isDimmed && !isDragged ? 'opacity-40 brightness-75 scale-95' : 'opacity-100 scale-100';
 
   return (
     <div
@@ -845,7 +843,7 @@ function TaskCard({ task, colorObj, index = 0, isDragged, isGrayGhost, isDragOve
       onDragEnd={onDragEnd}
       onClick={onClick}
       style={{ backgroundColor: bgColor, borderColor: borderColor }}
-      className={`relative w-[170px] shrink-0 h-[75px] rounded-2xl p-2.5 cursor-pointer shadow-md hover:shadow-xl transition-all duration-300 ease-out flex flex-col justify-between select-none ${textColor} border-2 group ${dimClass} ${isDragOver ? 'ml-[180px] scale-95 opacity-80' : ''} ${task.isLocked ? 'opacity-70' : ''}`}
+      className={`relative w-[170px] shrink-0 h-[75px] rounded-2xl p-2.5 cursor-pointer shadow-md hover:shadow-xl transition-all duration-300 ease-out flex flex-col justify-between select-none ${textColor} border-2 group ${dimClass} ${dragClass} ${isDragOver ? 'ml-[180px] scale-95 opacity-80' : ''} ${task.isLocked ? 'opacity-70' : ''}`}
     >
       <div className="flex items-start justify-between gap-1">
         <h4 className="font-black text-sm tracking-tight truncate w-[50%]">{task.title}</h4>

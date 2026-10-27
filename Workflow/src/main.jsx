@@ -11,6 +11,7 @@ import {
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
 import DiamondGame from './DiamondGame.jsx';
+
 // --- FIREBASE SETUP ---
 const firebaseConfig = {
   apiKey: "AIzaSyAv1k8euZ6MVfgN1ffQ0vQfXg0GXmt9SPM",
@@ -114,6 +115,7 @@ export default function App() {
   const [rowDragHoverId, setRowDragHoverId] = useState(null); 
   
   const dragTimeoutRef = useRef(null);
+  const dragStartTimeoutRef = useRef(null); // Fixes invisible instant-drop card glitch
   const angelRef = useRef(null);
 
   const [slashingTask, setSlashingTask] = useState(null);
@@ -149,25 +151,7 @@ export default function App() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, [lastScrollY]);
 
-  useEffect(() => {
-    if (tasks.length === 0) return;
-    let tasksChanged = false;
-    let newTasks = [...tasks];
-    for (let i = 1; i <= activeBoard.rowCount; i++) {
-      const rowTasks = newTasks.filter(t => t.boardId === activeBoardId && t.rowId === i);
-      if (rowTasks.length === 0) {
-        const tasksBelow = newTasks.filter(t => t.boardId === activeBoardId && typeof t.rowId === 'number' && t.rowId > i);
-        if (tasksBelow.length > 0) {
-          newTasks = newTasks.map(t => {
-            if (t.boardId === activeBoardId && typeof t.rowId === 'number' && t.rowId > i) return { ...t, rowId: t.rowId - 1 };
-            return t;
-          });
-          tasksChanged = true; break;
-        }
-      }
-    }
-    if (tasksChanged) setTasks(newTasks);
-  }, [tasks, activeBoardId, activeBoard.rowCount]);
+  // NOTE: The effect that auto-jumps cards up empty rows has been removed here per your request!
 
   const triggerNotification = (msg) => {
     if(typeof msg !== 'string') return;
@@ -223,7 +207,7 @@ export default function App() {
   // --- TASK & LOCK MANAGEMENT ---
   const handleCreateTask = () => {
     setEditingTask({
-      id: 'task_' + Date.now(), boardId: activeBoardId, title: 'Title', subtitle: 'Sub title', description: 'Description',
+      id: 'task_' + Date.now(), boardId: activeBoardId, title: '', subtitle: '', description: '',
       rowId: 'forgotten', reminder: null, isLocked: false, isNew: true
     }); 
   };
@@ -255,6 +239,17 @@ export default function App() {
     const restored = { ...task }; delete restored.deletedAt;
     setTasks(prev => [...prev, restored]);
     triggerNotification('Restored card from graveyard!');
+  };
+
+  // RESTORED DUPLICATE TASK FUNCTION
+  const handleDuplicateTask = (task) => {
+    const duplicatedTask = {
+      ...task,
+      id: 'task_' + Date.now() + Math.random().toString(36).substr(2, 5),
+      title: `${task.title} (Copy)`
+    };
+    setTasks(prev => [...prev, duplicatedTask]);
+    triggerNotification('Card duplicated!');
   };
 
   const toggleCardLock = (e, taskId) => {
@@ -316,7 +311,6 @@ export default function App() {
     }, 600);
   };
 
-  // SAFEGUARD ADDED HERE FOR THE CROWN MODAL
   const handleUndoTask = (completedTask) => {
     if (!completedTask || !completedTask.id) return;
     setPoints(p => Math.max(0, p - (completedTask.earnedPoints || 0)));
@@ -333,14 +327,17 @@ export default function App() {
     triggerNotification('Card restored and points adjusted.');
   };
 
-  // --- DRAG AND DROP HANDLERS WITH GLITCH/DELAY FIX ---
+  // --- DRAG AND DROP HANDLERS ---
   const handleDragStartTask = (e, task) => {
     if (task.isLocked || lockedRows.includes(task.rowId)) { e.preventDefault(); return; }
     e.dataTransfer.setData('text/plain', task.id); 
     e.dataTransfer.effectAllowed = 'move';
     setGlobalDragState('card');
     setGrayGhostId(task.id); 
-    setTimeout(() => setDraggedTaskId(task.id), 10);
+    
+    // FIX: Strict timeout so instant drops cancel safely and don't turn invisible
+    if (dragStartTimeoutRef.current) clearTimeout(dragStartTimeoutRef.current);
+    dragStartTimeoutRef.current = setTimeout(() => setDraggedTaskId(task.id), 10);
   };
 
   const handleDragStartRow = (e, rowId) => {
@@ -350,17 +347,22 @@ export default function App() {
     setDraggedRowId(rowId); 
     e.dataTransfer.setData('text/rowId', rowId.toString());
 
-    // ROW "PLATE" VISUAL FIX: Tells the browser to grab the entire row instead of just the button
+    // SMOOTH ROW VISUAL FIX: Snaps exact mouse coordinates to perfectly hold the row
     const rowElement = e.currentTarget.closest('.row-container-drag');
     if (rowElement) {
-      e.dataTransfer.setDragImage(rowElement, 30, 30);
+      const rect = rowElement.getBoundingClientRect();
+      const offsetX = e.clientX - rect.left;
+      const offsetY = e.clientY - rect.top;
+      e.dataTransfer.setDragImage(rowElement, offsetX, offsetY);
     }
   };
 
   const handleDragEnd = () => {
     setDraggedTaskId(null); setGrayGhostId(null); setDraggedRowId(null);
     setDragOverTaskId(null); setIsHoveringTrash(false); setGlobalDragState(null); setRowDragHoverId(null);
+    
     if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
+    if (dragStartTimeoutRef.current) clearTimeout(dragStartTimeoutRef.current);
   };
 
   const handleDragOverTask = (e, targetTaskId) => {
@@ -570,7 +572,6 @@ export default function App() {
       </aside>
 
       {/* HEADER (Sticky & Scroll Responsive) */}
-      {/* HEADER (Sticky & Scroll Responsive) */}
       <header className={`fixed top-0 w-full z-30 px-4 sm:px-6 py-3 flex items-center justify-between backdrop-blur-md bg-black/10 transition-transform duration-500 ease-in-out ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}`}>
         <div className="flex items-center gap-3">
           <button onClick={() => setSidebarOpen(true)} className={`p-2 rounded-xl active:scale-95 transition-all ${theme === 'night' ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-black/10 hover:bg-black/20 text-stone-900'}`}>
@@ -607,7 +608,6 @@ export default function App() {
             {/* CENTRAL LEADERBOARD SPINE & ANGEL */}
             <div className="flex flex-col items-center shrink-0 select-none relative z-10 pt-2">
               
-              {/* NEW ROUND, DETAILED CROWN SVG REPLACING THE SQUARE */}
               <div 
                 ref={angelRef}
                 onClick={() => setActiveModal('treasure')}
@@ -628,6 +628,7 @@ export default function App() {
                 {activeBoard.rowCount > 1 && <button onClick={handleRemoveRow} className={`w-8 h-8 rounded-full flex items-center justify-center border hover:scale-110 active:scale-90 transition-all ${theme === 'night' ? 'bg-rose-500/20 border-rose-500/40 text-rose-400' : 'bg-rose-100 border-rose-300 text-rose-700'}`}><MinusCircle size={16} /></button>}
               </div>
             </div>
+
             {/* TASK ROWS */}
             <div className="flex-1 flex flex-col pt-12">
               {Array.from({ length: activeBoard.rowCount }).map((_, idx) => {
@@ -698,7 +699,6 @@ export default function App() {
           </div>
         </main>
       </div>
-
       {/* PERMANENT RIGHT-SIDE TRASH ZONE */}
       <div 
         onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsHoveringTrash(true); }}
@@ -720,7 +720,14 @@ export default function App() {
             <Skull size={24} className="text-zinc-500" />
             <h2 className="font-black text-lg tracking-widest uppercase text-zinc-400">Graveyard</h2>
           </div>
-          <button onClick={() => setGraveyardOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors"><X size={20} /></button>
+          <div className="flex items-center gap-2">
+            {deletedTasks.length > 0 && (
+              <button onClick={() => { setDeletedTasks([]); triggerNotification('Graveyard cleared forever.'); }} className="flex items-center gap-1 p-1.5 px-3 bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white rounded-lg transition-colors text-[10px] uppercase font-bold tracking-wider">
+                <Trash2 size={12} /> Clear All
+              </button>
+            )}
+            <button onClick={() => setGraveyardOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors"><X size={20} /></button>
+          </div>
         </div>
         
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
@@ -782,12 +789,24 @@ export default function App() {
 
               <div className="mb-4">
                 <div className="flex items-center justify-between mb-1"><label className="text-xs uppercase font-extrabold opacity-50">Title</label><span className="text-[11px] opacity-50">{editingTask.title.length}/20</span></div>
-                <input type="text" maxLength={20} value={editingTask.title} onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })} placeholder="Title" className="w-full text-2xl font-black bg-transparent border-b-2 border-slate-500/30 focus:border-amber-500 focus:outline-none py-1.5 transition-colors"/>
+                <input 
+                  type="text" maxLength={20} value={editingTask.title} 
+                  onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })} 
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleSaveTask(editingTask); }}
+                  placeholder="Title" 
+                  className="w-full text-2xl font-black bg-transparent border-b-2 border-slate-500/30 focus:border-amber-500 focus:outline-none py-1.5 transition-colors"
+                />
               </div>
 
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-1"><label className="text-xs uppercase font-extrabold opacity-50">Sub Title</label><span className="text-[11px] opacity-50">{(editingTask.subtitle || '').length}/50</span></div>
-                <input type="text" maxLength={50} value={editingTask.subtitle || ''} onChange={(e) => setEditingTask({ ...editingTask, subtitle: e.target.value })} placeholder="Sub Title" className="w-full text-sm font-semibold bg-transparent border-b border-slate-500/30 focus:border-amber-500 focus:outline-none py-1.5 transition-colors"/>
+                <input 
+                  type="text" maxLength={50} value={editingTask.subtitle || ''} 
+                  onChange={(e) => setEditingTask({ ...editingTask, subtitle: e.target.value })} 
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleSaveTask(editingTask); }}
+                  placeholder="Sub Title" 
+                  className="w-full text-sm font-semibold bg-transparent border-b border-slate-500/30 focus:border-amber-500 focus:outline-none py-1.5 transition-colors"
+                />
               </div>
 
               <div className="mb-6">
@@ -889,7 +908,10 @@ export default function App() {
           </div>
         </div>
       )}
-        {showDiamondGame && <DiamondGame onClose={() => setShowDiamondGame(false)} />}
+
+      {/* THE DIAMOND GAME POPUP */}
+      {showDiamondGame && <DiamondGame onClose={() => setShowDiamondGame(false)} />}
+      
     </div>
   );
 }
@@ -947,7 +969,7 @@ function TaskCard({ task, colorObj, index = 0, isDragged, isGrayGhost, isDragOve
           </button>
           {!task.isLocked && (
             <>
-              <button onClick={onDuplicate} className="shrink-0 p-1 bg-black/10 hover:bg-black/20 rounded-md transition-colors" title="Duplicate">
+              <button onClick={(e) => { e.stopPropagation(); onDuplicate(task); }} className="shrink-0 p-1 bg-black/10 hover:bg-black/20 rounded-md transition-colors" title="Duplicate">
                 <Copy size={12} className="text-current" />
               </button>
               <button onClick={(e) => { e.stopPropagation(); onSlash(task); }} className="shrink-0 p-1 bg-black/10 hover:bg-black/20 rounded-md transition-colors" title="Complete">
@@ -956,7 +978,6 @@ function TaskCard({ task, colorObj, index = 0, isDragged, isGrayGhost, isDragOve
             </>
           )}
         </div>
-        
       </div>
 
       <div className="flex items-center justify-between mt-auto">
